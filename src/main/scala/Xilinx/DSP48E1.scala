@@ -137,7 +137,6 @@ class DSP48E1( val dspParams : DSP48E1Params ) extends BlackBox {
   addClock(Driver.implicitClock)
   // remove implied resets as there are many defined as io
   this.reset = null
-  this.resets.clear()
 
   // TODO: Implement DSP functionality for simulation
 
