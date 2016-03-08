@@ -8,7 +8,7 @@
  ACIN   BCIN   PCIN   MULTSIGNIN   CARRYSIGNIN
  */
 
-package ChiselUtils.Xilinx
+package chiselutils.xilinx
 
 import Chisel._
 
@@ -135,8 +135,7 @@ class DSP48E1( val dspParams : DSP48E1Params ) extends BlackBox {
   setVerilogParameters(dspParams)
   // clock has same name so no issue
   addClock(Driver.implicitClock)
-  // remove implied resets as there are many defined as io
-  this.reset = null
+  // TODO: deal with resets
 
   // TODO: Implement DSP functionality for simulation
 

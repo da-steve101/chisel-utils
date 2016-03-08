@@ -1,13 +1,23 @@
-organization := "sydney.edu.au"
+val chiselVersion = System.getProperty("chiselVersion", "latest.release")
 
-version := "0.1"
+lazy val olkSettings = Seq(
+  organization := "sydney.edu.au",
 
-name := "chisel-utils"
+  version := "0.1",
 
-scalaVersion := "2.11.6"
+  name := "chiselUtils",
 
-scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked", "-language:reflectiveCalls")
+  scalaVersion := "2.11.7",
 
-libraryDependencies += "com.novocode" % "junit-interface" % "0.10" % "test"
-libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.4" % "test"
-libraryDependencies <+= (scalaVersion)("org.scala-lang" % "scala-reflect" % _)
+  scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked", "-language:reflectiveCalls"),
+  resolvers += "typesafe" at "http://repo.typesafe.com/typesafe/releases/",
+  parallelExecution in Test := false,
+  libraryDependencies ++= ( if (chiselVersion != "None" ) ("edu.berkeley.cs" %% "chisel" % chiselVersion) :: Nil; else Nil),
+  libraryDependencies += "com.github.tototoshi" %% "scala-csv" % "1.2.1",
+  libraryDependencies += "com.novocode" % "junit-interface" % "0.10" % "test",
+  libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.4" % "test",
+  libraryDependencies += "org.scala-lang" % "scala-compiler" % "2.11.7"
+)
+
+lazy val chiselUtils = (project in file(".")).settings(olkSettings: _*)
+

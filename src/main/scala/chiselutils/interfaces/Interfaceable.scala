@@ -1,4 +1,4 @@
-package ChiselUtils.Interfaces
+package chiselutils.interfaces
 
 import Chisel._
 
