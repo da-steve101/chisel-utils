@@ -46,6 +46,8 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
   println("outBW = " + outBW)
   println("inBW = " + inBW)
 
+  // compute LCM then attach to vec of combined
+
   // first trivial case is widthIn == widthOut
   if ( widthIn == widthOut ) {
     io.dataOut.valid := io.dataIn.valid
@@ -181,35 +183,43 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
       val inPos = RegInit( UInt( 0, inBW ) )
       val remaining = UInt( widthOut, inBW + 1 ) - inPos
       val inPosNext = inPos + UInt( widthOut, inBW + 1 )
-      val used = ( UInt( widthIn - widthOut, inBW + 1) < inPosNext ) && io.dataIn.valid
       val leftOver = RegInit( Bool(false) )
+      val used = { ( !leftOver && ( UInt( widthIn - widthOut, inBW + 1) < inPosNext ) && io.dataIn.valid ) ||
+        leftOver && ( UInt( widthIn - widthOut, inBW + 1 ) < inPos ) && io.dataIn.valid }
       when ( io.dataIn.valid ) {
-        printf("inPos = %x, inPosNext = %x, used = %x, leftOver = %x\n", inPos, inPosNext, used, leftOver)
+        printf("inPos = %x, inPosNext = %x, used = %x, leftOver = %x, remaining = %x\n", inPos, inPosNext, used, leftOver, remaining)
         for ( i <- 0 until (widthOut - 1) ) {
           tmpReg(i) := io.dataIn.bits( widthIn - widthOut + 1 + i )
+          printf("tmpReg(" + i + ") = %d\n", tmpReg(i))
+          printf("tmpReg(" + i + ").next = %d\n", io.dataIn.bits( widthIn - widthOut + 1 + i ))
         }
         inPos := inPosNext
       }
       val tmpOut = Vec.fill( widthOut ) { genType.cloneType }
       for ( i <- 0 until widthOut ) {
-        val tmpRegIdx = remaining + UInt(i, outBW)
+        val tmpRegIdx = (inPos - UInt(1, inBW)) + UInt(i, outBW) 
         when ( UInt(i, outBW ) < remaining ) {
           tmpOut(i) := tmpReg( tmpRegIdx( outBW - 1, 0 ) )
+          printf("tmpOut(" + i + ") = tmpReg(%d) = %d\n", tmpRegIdx( outBW - 1, 0 ), tmpOut(i))
         } .otherwise {
           tmpOut(i) := io.dataIn.bits( UInt( i, inBW ) - remaining )
-        }
-      }
-      when ( used ) {
-        when( inPosNext =/= UInt( widthIn, inBW + 1 ) ) {
-          leftOver := Bool(true)
-          inPos := inPosNext - UInt( widthIn - widthOut, inBW )
-        } .otherwise {
-          inPos := UInt( 0, inBW )
+          printf("tmpOut(" + i + ") = io.dataIn.bits(%d) = %d\n", UInt( i, inBW ) - remaining, io.dataIn.bits( UInt( i, inBW ) - remaining ))
         }
       }
       when ( leftOver && io.dataIn.valid) {
         leftOver := Bool(false)
         inPos := inPos
+      }
+      when ( used ) {
+        when( inPosNext =/= UInt( widthIn, inBW + 1 ) ) {
+          leftOver := Bool(true)
+          inPos := inPosNext - UInt( widthIn - widthOut, inBW + 1 )
+          when ( leftOver ) {
+            inPos := inPosNext - UInt( widthIn, inBW + 1 )
+          }
+        } .otherwise {
+          inPos := UInt( 0, inBW )
+        }
       }
       io.dataIn.ready := used
       io.dataOut.valid := io.dataIn.valid
