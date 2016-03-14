@@ -65,7 +65,8 @@ class SerializerSuite extends TestSuite {
       var count = 0;
       var outCount = 0;
       while ( count < cycles ) {
-        poke( c.io.dataIn.valid, true)
+        val inputVld = (myRand.nextInt(5) != 0)
+        poke( c.io.dataIn.valid, inputVld)
         (0 until c.vecInSize).foreach( i => poke( c.io.dataIn.bits(i), inputData(count)(i) ) )
         val outputValid = peek( c.io.dataOut.valid )
         if ( outputValid == 1) {
@@ -76,7 +77,7 @@ class SerializerSuite extends TestSuite {
           }
         }
         val ready = peek(c.io.dataIn.ready)
-        if ( ready == 1 ) {
+        if ( ready == 1 && inputVld ) {
           count = count + 1
         }
         step(1)
