@@ -6,29 +6,6 @@ package chiselutils.utils
 import scala.collection.mutable.ArrayBuffer
 import Chisel._
 
-/** This object allows the assignment of a dynamic section of a vector to another
-  * Allowing vecOut(5,1) := vecIn(6, 2), where the indexs can be dynamically specified
-  */
-object DynamicVecAssign {
-  def apply[T <: Data]( vecOut : Vec[T], hiOut : UInt, loOut : UInt, vecIn : Vec[T],  hiIn : UInt, loIn : UInt ) : Unit = {
-    val vecOutLen = vecOut.length
-    val vecInLen = vecIn.length
-    val vecOutBW = log2Up(vecOutLen)
-    val vecInBW = log2Up(vecInLen)
-    val maxWidth = if ( vecInBW > vecOutBW ) vecInBW else vecOutBW
-    println("vecInSize = " + vecInLen + ", vecOutSize = " + vecOutLen)
-    if ( vecOutLen == 0 || vecInLen == 0 ) {
-      ChiselError.error("The vectors cannot have a width of 0")
-    }
-    for ( i <- 0 until vecOutLen ) {
-      val inIdx = loIn + UInt(i, maxWidth) - loOut
-      when ( hiOut >= UInt(i, vecOutBW) && loOut <= UInt(i, vecOutBW) ) {
-        vecOut(UInt(i, vecOutBW)) := vecIn(inIdx(vecInBW - 1, 0))
-      }
-    }
-  }
-}
-
 /** This block provides a conversion from a vector of one width to another
   * The interface has a bits/valid designed to pull input from a fifo
   * The output is bits/valid
@@ -69,11 +46,6 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
 
   val inBW = log2Up(gcdWidthIn)
   val outBW = log2Up(gcdWidthOut)
-  println("gcdWidthIn = " + gcdWidthIn)
-  println("gcdWidthOut = " + gcdWidthOut)
-  println("outBW = " + outBW)
-  println("inBW = " + inBW)
-
 
   // first trivial case is gcdWidthIn == gcdWidthOut
   if ( gcdWidthIn == gcdWidthOut ) {
@@ -98,8 +70,6 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
     when ( io.flushed ) {
       flushReg := Bool(false)
     }
-
-    printf("filled = %d\n", filled)
 
     // at least 1 value can come directly from the input
     val tmpSig = Vec.fill( gcdWidthOut - 1 ) { gcdType.cloneType }
@@ -187,11 +157,8 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
                     ( !io.dataIn.valid && io.flush ) }
 
     when ( io.dataIn.valid ) {
-      printf("inPos = %x, inPosNext = %x, used = %x, leftOver = %x, remaining = %x\n", inPos, inPosNext, used, leftOver, remaining)
       for ( i <- 0 until (gcdWidthOut - 1) ) {
         tmpReg(i) := vecInComb( gcdWidthIn - gcdWidthOut + 1 + i )
-        printf("tmpReg(" + i + ") = %d\n", tmpReg(i))
-        printf("tmpReg(" + i + ").next = %d\n", vecInComb( gcdWidthIn - gcdWidthOut + 1 + i ))
       }
       inPos := inPosNext
     }
@@ -200,10 +167,8 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
       val tmpRegIdx = (inPos - UInt(1, inBW)) + UInt(i, outBW)
       when ( UInt(i, outBW ) < remaining ) {
         tmpOut(i) := tmpReg( tmpRegIdx( outBW - 1, 0 ) )
-        printf("tmpOut(" + i + ") = tmpReg(%d) = %d\n", tmpRegIdx( outBW - 1, 0 ), tmpOut(i))
       } .otherwise {
         tmpOut(i) := vecInComb( UInt( i, inBW ) - remaining )
-        printf("tmpOut(" + i + ") = vecInComb(%d) = %d\n", UInt( i, inBW ) - remaining, vecInComb( UInt( i, inBW ) - remaining ))
       }
     }
     when ( leftOver && io.dataIn.valid) {
