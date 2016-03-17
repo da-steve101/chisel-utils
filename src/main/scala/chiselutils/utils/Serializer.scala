@@ -43,7 +43,9 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
 
   val io = new Bundle {
     val dataIn = Decoupled(Vec.fill(widthIn) { genType.cloneType }).flip
+    val flush = Bool(INPUT)
     val dataOut = Valid(Vec.fill(widthOut) { genType.cloneType })
+    val flushed = Bool(OUTPUT)
   }
   val genWidth = genType.getWidth
 
@@ -78,27 +80,42 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
     io.dataOut.valid := io.dataIn.valid
     io.dataOut.bits := io.dataIn.bits
     io.dataIn.ready := Bool(true)
+    io.flushed := io.flush
   }
 
   // second case is if gcdWidthIn < gcdWidthOut
   if ( gcdWidthIn < gcdWidthOut ) {
     // In the general case, we need to be able to wire each value to anywhere in the output
     // There will also be left over Input to be wrapped around
-    val outPos = RegInit(UInt(0, width = outBW)) // the position we are upto in the output reg
+    val outPos = RegInit(UInt(0, outBW)) // the position we are upto in the output reg
     val outPosNext = outPos + UInt(gcdWidthIn, outBW + 1) // the next position after this clock cycle
     val excess = outPos - UInt( gcdWidthOut - gcdWidthIn, outBW ) // When the last of the output is filled in, how many of the input are left
     val remaining = UInt( gcdWidthOut, outBW + 1) - outPos // the number of spots remaining
     val filled = ( UInt( gcdWidthOut - gcdWidthIn, outBW ) <= outPos ) && io.dataIn.valid // Indicates if the output was just filled
+    val fillFlush = ( UInt( gcdWidthOut - gcdWidthIn, outBW ) < outPos ) && io.dataIn.valid
+    val flushReg = RegNext( fillFlush && io.flush )
+    io.flushed := ( !fillFlush && io.flush ) || flushReg
+    when ( io.flushed ) {
+      flushReg := Bool(false)
+    }
+
+    printf("filled = %d\n", filled)
 
     // at least 1 value can come directly from the input
+    val tmpSig = Vec.fill( gcdWidthOut - 1 ) { gcdType.cloneType }
     val tmpReg = Reg( Vec.fill( gcdWidthOut - 1 ) { gcdType.cloneType } )
+    tmpReg := tmpSig
+    tmpSig := tmpReg
     // a vec representing the mix from the input and register
     val tmpOut = Vec.fill( gcdWidthIn ) { gcdType.cloneType }
 
     // assign tmpOut from tmpReg and input
     for ( i <- 0 until gcdWidthIn ) {
       when ( excess > UInt(i, inBW) ) {
-        tmpOut(i) := tmpReg( UInt( gcdWidthOut - gcdWidthIn, outBW ) + UInt( i, outBW ) )
+        tmpOut(i) := tmpSig( UInt( gcdWidthOut - gcdWidthIn, outBW ) + UInt( i, outBW ) )
+        when ( filled ) {
+          tmpOut(i) := tmpReg( UInt( gcdWidthOut - gcdWidthIn, outBW ) + UInt( i, outBW ) )
+        }
       } .otherwise {
         tmpOut(i) := vecInComb( UInt(i, inBW) - excess )
       }
@@ -106,13 +123,16 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
 
     // assign the output
     for ( i <- 0 until ( gcdWidthOut - gcdWidthIn ) ) {
-      vecOutComb(i) := tmpReg(i)
+      vecOutComb(i) := tmpSig(i)
+      when ( filled ) {
+        vecOutComb(i) := tmpReg(i)
+      }
     }
     for ( i <- 0 until gcdWidthIn ) {
       vecOutComb( i + gcdWidthOut - gcdWidthIn ) := tmpOut(i)
     }
-    io.dataOut.valid := filled
-    io.dataIn.ready := Bool(true)
+    io.dataOut.valid := filled || ( io.flushed &&  (io.dataIn.valid ||  outPos =/= UInt(0, outBW) ) )
+    io.dataIn.ready := !( fillFlush && io.flush ) || io.flushed
 
     // update the output position
     when ( io.dataIn.valid ) {
@@ -121,6 +141,9 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
         outPos := excess
       }
     }
+    when ( io.flushed ) {
+      outPos := UInt(0, outBW)
+    }
 
     val hiOut = UInt( width = outBW )
     val loOut = UInt( width = outBW )
@@ -128,7 +151,7 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
     val loIn = UInt( width = inBW )
 
     when ( io.dataIn.valid && !( filled && ( excess === UInt( 0, outBW ) ) )) {
-      DynamicVecAssign( tmpReg, hiOut, loOut, vecInComb, hiIn, loIn )
+      DynamicVecAssign( tmpSig, hiOut, loOut, vecInComb, hiIn, loIn )
     }
 
     hiOut := outPosNext - UInt(1, outBW)
@@ -156,6 +179,13 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
     val leftOver = RegInit( Bool(false) )
     val used = { ( !leftOver && ( UInt( gcdWidthIn - gcdWidthOut, inBW + 1) < inPosNext ) && io.dataIn.valid ) ||
       leftOver && ( UInt( gcdWidthIn - gcdWidthOut, inBW + 1 ) < inPos ) && io.dataIn.valid }
+    val flushReg = RegInit(Bool(false))
+    val flush = io.flush || flushReg
+    flushReg := ( io.flush && io.dataIn.valid && ( inPosNext =/= UInt(gcdWidthIn, inBW + 1) ) ) || flushReg
+    io.flushed := { ( io.dataIn.valid && flush && used && (inPosNext === UInt(gcdWidthIn, inBW + 1)) ) ||
+                    ( io.dataIn.valid && flushReg && leftOver ) ||
+                    ( !io.dataIn.valid && io.flush ) }
+
     when ( io.dataIn.valid ) {
       printf("inPos = %x, inPosNext = %x, used = %x, leftOver = %x, remaining = %x\n", inPos, inPosNext, used, leftOver, remaining)
       for ( i <- 0 until (gcdWidthOut - 1) ) {
@@ -191,8 +221,15 @@ class Serializer[T <: Data]( genType : T, widthIn : Int, widthOut : Int) extends
         inPos := UInt( 0, inBW )
       }
     }
-    io.dataIn.ready := used
-    io.dataOut.valid := io.dataIn.valid
+
+    when ( io.flushed ) {
+      inPos := UInt( 0, inBW )
+      leftOver := Bool(false)
+      flushReg := Bool(false)
+    }
+
+    io.dataIn.ready := ( used && !flush ) || io.flushed
+    io.dataOut.valid := io.dataIn.valid || ( io.flushed && leftOver )
     // dynVec with default value
     val dynVecOut = Vec.fill( gcdWidthOut ) { gcdType.cloneType }
     for ( i <- 0 until gcdWidthOut ) {
