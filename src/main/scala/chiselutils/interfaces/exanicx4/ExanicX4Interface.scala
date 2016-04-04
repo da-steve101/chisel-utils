@@ -163,6 +163,9 @@ class ExanicX4Interface extends Module {
   reset.setName("rst")
   io.setNames
 
+  ChiselError.warning("when using this interface with the exanic devkit, "
+    + "the verilog will have to be edited to invert the reset input and include any other clocks")
+
   // Default connections for functioning as a network card
   io.tx0Usr <> io.tx0Host
   io.rx0Usr.rxComm <> io.rx0Host.rxComm
