@@ -65,7 +65,8 @@ class SerializerSuite extends TestSuite {
 
     for ( vecOutSize <- 1 until 20 ) {
       for ( vecInSize <- 1 until 20 ) {
-        chiselMainTest(Array("--genHarness", "--compile", "--test", "--backend", "c"), () => Module(
+        chiselMainTest(Array("--genHarness", "--compile", "--test", "--backend", "c",
+          "--targetDir", dir.getPath.toString()), () => Module(
           new UserMod( vecInSize, vecOutSize )) ) { c => new UserTests(c, scala.math.max( vecOutSize, vecInSize )*5 ) }
       }
     }

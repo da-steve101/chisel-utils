@@ -30,7 +30,7 @@ class SimpleAdderSuite extends TestSuite {
 
     class ExanicX4Test extends ExanicX4TimeSeries( UInt( width = 8 ), 32, 128, simpleAddFunct, 100 )
 
-    chiselMain(Array("--backend", "v", "--wio", "--targetDir", "test-outputs/"),
+    chiselMain(Array("--backend", "v", "--wio", "--targetDir", dir.getPath.toString()),
       () => Module( new ExanicX4Test ) )
 
     assertFile("SimpleAdderSuite_ExanicX4Test_1.v")
