@@ -36,16 +36,29 @@ class AsyncFifoXilinx[ T <: Data ] ( genType : T, entries : Int, enqClk : Clock,
     fifo72Bit(fifoIdx).io.rden := io.deq.ready
   }
 
+  val enqRdy = {
+    if ( no36Fifo == 0 )
+      Bool(true)
+    else
+      fifo72Bit.map( x => !x.io.almostFull ).reduce(_ && _)
+  }
+  val deqVld = {
+    if ( no36Fifo == 0 )
+      Bool(true)
+    else
+      fifo72Bit.map( x => !x.io.empty ).reduce(_ && _)
+  }
+
   if ( no18Fifo != 0 ) {
     fifo36Bit(0).io.din := din( genType.getWidth() - 1, genType.getWidth() - 32 )
     fifo36Bit(0).io.dip := din( genType.getWidth() - 33, genType.getWidth() - 36 )
     fifo36Bit(0).io.wren := io.enq.valid
     fifo36Bit(0).io.rden := io.deq.ready
-    io.enq.ready := fifo72Bit.map( x => !x.io.almostFull ).reduce(_ && _) && !fifo36Bit(0).io.almostFull
-    io.deq.valid := fifo72Bit.map( x => !x.io.empty ).reduce(_ && _) && !fifo36Bit(0).io.empty
+    io.enq.ready :=  enqRdy && !fifo36Bit(0).io.almostFull
+    io.deq.valid :=  deqVld && !fifo36Bit(0).io.empty
   } else {
-    io.enq.ready := fifo72Bit.map( x => !x.io.almostFull ).reduce(_ && _)
-    io.deq.valid := fifo72Bit.map( x => !x.io.empty ).reduce(_ && _)
+    io.enq.ready := enqRdy
+    io.deq.valid := deqVld
   }
 
   val dataCombined = fifo72Bit.map( x => ( x.io.dout ## x.io.dop ) ).reverse.reduceLeft( _ ## _ )
