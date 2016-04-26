@@ -61,7 +61,14 @@ class AsyncFifoXilinx[ T <: Data ] ( genType : T, entries : Int, enqClk : Clock,
     io.deq.valid := deqVld
   }
 
-  val dataCombined = fifo72Bit.map( x => ( x.io.dout ## x.io.dop ) ).reverse.reduceLeft( _ ## _ )
+  val dataCombined = {
+    if ( no36Fifo == 0 ) {
+      val tmp = UInt( width = 0 )
+      tmp := UInt( 0 )
+      tmp
+    } else
+      fifo72Bit.map( x => ( x.io.dout ## x.io.dop ) ).reverse.reduceLeft( _ ## _ )
+  }
   val with18Fifo = { if ( no18Fifo != 0 ) {
     val fifo36Part = fifo36Bit(0).io.dout ## fifo36Bit(0).io.dop
     fifo36Part( 35, 35 - ( genType.getWidth() % 36 ) ) ## dataCombined
