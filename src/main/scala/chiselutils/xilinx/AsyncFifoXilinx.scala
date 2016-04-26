@@ -50,8 +50,8 @@ class AsyncFifoXilinx[ T <: Data ] ( genType : T, entries : Int, enqClk : Clock,
   }
 
   if ( no18Fifo != 0 ) {
-    fifo36Bit(0).io.din := din( genType.getWidth() - 1, genType.getWidth() - 32 )
-    fifo36Bit(0).io.dip := din( genType.getWidth() - 33, genType.getWidth() - 36 )
+    fifo36Bit(0).io.din := din( math.max( genType.getWidth() - 1, 0 ), math.max( genType.getWidth() - 32, 0 ) )
+    fifo36Bit(0).io.dip := din( math.max( genType.getWidth() - 33, 0), math.max( genType.getWidth() - 36, 0 ) )
     fifo36Bit(0).io.wren := io.enq.valid
     fifo36Bit(0).io.rden := io.deq.ready
     io.enq.ready :=  enqRdy && !fifo36Bit(0).io.almostFull
