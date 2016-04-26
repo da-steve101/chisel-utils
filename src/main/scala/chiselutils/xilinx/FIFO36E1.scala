@@ -110,6 +110,7 @@ class Fifo36E1( val is36Mode : Boolean, val dataWidth : Int, val almostEmpty : I
   }
 
   deqClk.getReset.setName("RST")
+  setModuleName("FIFO36E1")
 
   val fwft = true
   val doReg = 1
