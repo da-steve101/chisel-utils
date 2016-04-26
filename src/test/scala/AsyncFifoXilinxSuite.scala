@@ -55,4 +55,47 @@ class AsyncFifoXilinxSuite extends TestSuite {
     launchCppTester( ( c : UserTop ) => new AsyncQueueTests( c ) )
   }
 
+  @Test def testSmallFifo() {
+
+    class UserTop extends Module {
+      val io = new QueueIO( UInt( width = 8 ), 16 )
+      val enqClk = Clock()
+      val deqClk = Clock()
+      val testFifo = Module( new AsyncFifoXilinx( UInt( width = 8 ),
+        16, enqClk, deqClk ) )
+      testFifo.io <> io
+    }
+
+    class AsyncQueueTests( c : UserTop ) extends Tester( c ) {
+
+      val cycles = 20
+      val myRand = new Random
+      val values = ArrayBuffer.fill(cycles) { BigInt(myRand.nextInt( 1 << 8 )) }
+      var deqCount = 0
+
+      poke( c.io.enq.bits, values(0) )
+      poke( c.io.enq.valid, false )
+      poke( c.io.deq.ready, false )
+
+      step(1) // need this here as two clocks
+
+      for ( cyc <- 0 until cycles ) {
+
+        poke( c.io.enq.bits, values(cyc) )
+        poke( c.io.enq.valid, true )
+        val deqR = ( myRand.nextInt(2) == 0 )
+        poke( c.io.deq.ready, deqR )
+
+        step(1)
+
+        val deqVal = ( peek( c.io.deq.valid ) == 1 )
+        if( deqVal && deqR ) {
+          expect( c.io.deq.bits, values(deqCount) )
+          deqCount = deqCount + 1
+        }
+
+      }
+    }
+    launchCppTester( ( c : UserTop ) => new AsyncQueueTests( c ) )
+  }
 }

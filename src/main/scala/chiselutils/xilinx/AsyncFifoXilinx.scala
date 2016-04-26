@@ -49,9 +49,12 @@ class AsyncFifoXilinx[ T <: Data ] ( genType : T, entries : Int, enqClk : Clock,
       fifo72Bit.map( x => !x.io.empty ).reduce(_ && _)
   }
 
+  val remWidth = ( genType.getWidth() % 36 )
+  val offWidth = genType.getWidth() - remWidth
+
   if ( no18Fifo != 0 ) {
-    fifo36Bit(0).io.din := din( math.max( genType.getWidth() - 1, 0 ), math.max( genType.getWidth() - 32, 0 ) )
-    fifo36Bit(0).io.dip := din( math.max( genType.getWidth() - 33, 0), math.max( genType.getWidth() - 36, 0 ) )
+    fifo36Bit(0).io.din := din( genType.getWidth() - 1, math.min( 4, remWidth - 1 ) + offWidth )
+    fifo36Bit(0).io.dip := din( math.min( 3, remWidth - 1 ) + offWidth, offWidth )
     fifo36Bit(0).io.wren := io.enq.valid
     fifo36Bit(0).io.rden := io.deq.ready
     io.enq.ready :=  enqRdy && !fifo36Bit(0).io.almostFull
@@ -63,17 +66,22 @@ class AsyncFifoXilinx[ T <: Data ] ( genType : T, entries : Int, enqClk : Clock,
 
   val dataCombined = {
     if ( no36Fifo == 0 ) {
-      val tmp = UInt( width = 0 )
-      tmp := UInt( 0 )
-      tmp
+      UInt( width = 0 )
     } else
       fifo72Bit.map( x => ( x.io.dout ## x.io.dop ) ).reverse.reduceLeft( _ ## _ )
   }
-  val with18Fifo = { if ( no18Fifo != 0 ) {
-    val fifo36Part = fifo36Bit(0).io.dout ## fifo36Bit(0).io.dop
-    fifo36Part( 35, 35 - ( genType.getWidth() % 36 ) ) ## dataCombined
-  } else
-    dataCombined( genType.getWidth() - 1, 0 )
+  val with18Fifo = {
+    if ( no18Fifo != 0 ) {
+      val fifo36Part = fifo36Bit(0).io.dout ## fifo36Bit(0).io.dop
+      val tmp = {
+        if( dataCombined.getWidth() == 0 )
+          fifo36Part( remWidth - 1, 0 )
+        else
+          fifo36Part( remWidth - 1, 0 ) ## dataCombined
+      }
+      tmp
+    } else
+      dataCombined( genType.getWidth() - 1, 0 )
   }
   dout := with18Fifo
 
