@@ -2,12 +2,9 @@ package chiselutils.xilinx
 
 import Chisel._
 
-class Fifo36E1Io( is36Mode : Boolean, dataWidth : Int ) extends Bundle {
+class Fifo36E1Io( dataWidth : Int ) extends Bundle {
   if ( !Array( 4, 9, 18, 36, 72 ).contains( dataWidth ) ) {
     ChiselError.error( "dataWidth must be 4, 9, 18, 36 or 72" )
-  }
-  if ( !is36Mode && dataWidth == 72 ) {
-    ChiselError.error( "must be in 36 mode for dataWidth of 72" )
   }
 
   def getParityWidth : Int = {
@@ -37,13 +34,13 @@ class Fifo36E1Io( is36Mode : Boolean, dataWidth : Int ) extends Bundle {
   val rdErr = Bool( OUTPUT )
 
   def setNames() = {
-    din.setName("DIN")
+    din.setName("DI")
     dip.setName("DIP")
     wren.setName("WREN")
     rden.setName("RDEN")
     // rstreg.setName("RSTREG")
     // regce.setName("REGCE")
-    dout.setName("DOUT")
+    dout.setName("DO")
     dop.setName("DOP")
     full.setName("FULL")
     almostFull.setName("ALMOSTFULL")
@@ -88,10 +85,10 @@ class Fifo36E1Param( almostFull : Int, almostEmpty : Int, fwft : Boolean, doReg 
   val INIT = init
 }
 
-class Fifo36E1( val is36Mode : Boolean, val dataWidth : Int, val almostEmpty : Int,
+class Fifo36E1( val dataWidth : Int, val almostEmpty : Int,
   val almostFull : Int, val enqClk : Clock, val deqClk : Clock ) extends BlackBox {
 
-  val io = new Fifo36E1Io( is36Mode, dataWidth )
+  val io = new Fifo36E1Io( dataWidth )
 
   if ( almostEmpty < 6 ) {
     ChiselError.error( "almostFull must be atleast 6" )
@@ -111,6 +108,9 @@ class Fifo36E1( val is36Mode : Boolean, val dataWidth : Int, val almostEmpty : I
 
   deqClk.getReset.setName("RST")
   setModuleName("FIFO36E1")
+  io.setNames()
+  renameClock( enqClk.name, "WRCLK" )
+  renameClock( deqClk.name, "RDCLK" )
 
   val fwft = true
   val doReg = 1
@@ -142,23 +142,15 @@ class Fifo36E1( val is36Mode : Boolean, val dataWidth : Int, val almostEmpty : I
   io.dop := simFifo.io.deq.bits( io.dop.getWidth() - 1, 0 )
 
   val verParams = new Fifo36E1Param( almostFull, almostEmpty, fwft, doReg,
-    dataWidth, { if ( is36Mode ) "FIFO36" else "FIFO18" },
-    enSyn, srVal, init )
+    dataWidth, "FIFO36", enSyn, srVal, init )
 
   setVerilogParameters( verParams )
 
   def getCapacity = {
-    if ( is36Mode ) {
-      if ( dataWidth == 4 ) { 8193 }
-      else if ( dataWidth == 9 ) { 4097 }
-      else if ( dataWidth == 18 ) { 2049 }
-      else if ( dataWidth == 36 ) { 1025 }
-      else 513 
-    } else {
-      if ( dataWidth == 4 ) { 4097 }
-      else if ( dataWidth == 9 ) { 2049 }
-      else if ( dataWidth == 18 ) { 1025 }
-      else 513
-    }
+    if ( dataWidth == 4 ) { 8193 }
+    else if ( dataWidth == 9 ) { 4097 }
+    else if ( dataWidth == 18 ) { 2049 }
+    else if ( dataWidth == 36 ) { 1025 }
+    else 513
   }
 }

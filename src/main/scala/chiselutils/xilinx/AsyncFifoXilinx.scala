@@ -26,8 +26,9 @@ class AsyncFifoXilinx[ T <: Data ] ( genType : T, entries : Int, enqClk : Clock,
   val no18Fifo = noPart % 2
   val no36Fifo = ( noPart - no18Fifo )/2
 
-  val fifo72Bit = Array.fill( no36Fifo ) { Module( new Fifo36E1( true, 72, 10, entries, enqClk, deqClk ) ) }
-  val fifo36Bit = Array.fill( no18Fifo ) { Module( new Fifo36E1( false, 36, 10, entries, enqClk, deqClk ) ) }
+  val fifo72Bit = Array.fill( no36Fifo ) { Module( new Fifo36E1( 72, 10, entries, enqClk, deqClk ) ) }
+  // TODO: replace this with a fifo18
+  val fifo36Bit = Array.fill( no18Fifo ) { Module( new Fifo36E1( 36, 10, entries, enqClk, deqClk ) ) }
 
   for ( fifoIdx <- 0 until no36Fifo ) {
     fifo72Bit(fifoIdx).io.din := din( math.min( ( fifoIdx + 1 )*72 - 1, genType.getWidth() - 1 ), ( fifoIdx + 1 )*72 - 64 )
