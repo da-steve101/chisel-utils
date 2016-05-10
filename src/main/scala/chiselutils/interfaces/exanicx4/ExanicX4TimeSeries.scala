@@ -74,25 +74,12 @@ class ExanicX4TimeSeries[ T <: Bits ]( genType : T, fifoDepth : Int, memSize : I
   val vecDataOut = Vec.fill( userMod.bwOfGenType ) { UInt( width = 1 ) }
   ( 0 until userMod.bwOfGenType ).foreach( x => { vecDataOut(x) := userMod.io.dataOut.bits(x) } )
 
-  // change width vecDataOut -> buffer
-  val directOutputFifo = Module( new Queue( Vec.fill( userMod.bwOfGenType ) { UInt( width = 1 ) }, fifoDepth ) )
-  directOutputFifo.io.enq.bits := vecDataOut
-  directOutputFifo.io.enq.valid := userMod.io.dataOut.valid
-  userMod.io.dataOut.ready := directOutputFifo.io.enq.ready
-
   val outToBuffer = Module( new Serializer( UInt( width = 1 ), userMod.bwOfGenType, 64 ) )
-  outToBuffer.io.dataIn <> directOutputFifo.io.deq
+  outToBuffer.io.dataIn.bits := vecDataOut
+  outToBuffer.io.dataIn.valid := userMod.io.dataOut.valid
+  userMod.io.dataOut.ready := outToBuffer.io.dataIn.ready
 
-  val buffCount = RegInit( UInt( 0, log2Up( noOutputs + 1 ) ) )
-  val flush = ( ( buffCount >= UInt( noOutputs, log2Up( noOutputs + 1 ) ) )
-    && outToBuffer.io.dataIn.valid ) || fifoDrain
-  when( outToBuffer.io.dataIn.ready && outToBuffer.io.dataIn.valid ) {
-    buffCount := buffCount + UInt( 1, log2Up( noOutputs + 1 ) )
-  }
-  when( flush ) {
-    buffCount := UInt( 0, log2Up( noOutputs + 1 ) )
-  }
-  outToBuffer.io.flush := flush
+  outToBuffer.io.flush := fifoDrain
   val buffer = RegNext( outToBuffer.io.dataOut.bits )
   val bufferVld = RegNext( outToBuffer.io.dataOut.valid )
 
@@ -101,10 +88,19 @@ class ExanicX4TimeSeries[ T <: Bits ]( genType : T, fifoDepth : Int, memSize : I
   ( 0 until 8).foreach( idx => bufferByte(idx) := UInt(0, 8) )
   ( 0 until 64).foreach( idx => { bufferByte( idx/8 )( idx % 8 ) := buffer( idx ) })
 
+  val directOutputFifo = Module( new Queue( Vec.fill( 8 ) { UInt( width = 8 ) }, fifoDepth ) )
+  directOutputFifo.io.enq.bits := bufferByte
+  directOutputFifo.io.enq.valid := bufferVld
+
+  // Pad data to fit with required number of bytes
+  val dataSep = Module( new DataSeparator( bytesOut ) )
+  dataSep.io.enq <> directOutputFifo.io.deq
+  val dRst = dataSep.reset
+  dRst := fifoDrain || reset
+
   // output fifo
   val fifoTxOut = Module(new Queue( Vec.fill( 8 ) { UInt( width = 8 ) } , fifoDepth ) )
-  fifoTxOut.io.enq.bits := bufferByte
-  fifoTxOut.io.enq.valid := bufferVld
+  fifoTxOut.io.enq <> dataSep.io.deq
 
   // reset errors after put in fifo
   rx1Err := rx1Err || io.rx1Usr.rxComm.err
@@ -124,7 +120,7 @@ class ExanicX4TimeSeries[ T <: Bits ]( genType : T, fifoDepth : Int, memSize : I
     userErr := Bool(false)
   }
 
-  val noSegment = math.floor( (bytesOut - 1)/8.0 ).toInt
+  val noSegment = math.ceil( bytesOut/8.0 ).toInt
   val segmentCounter = RegInit( UInt( 0, log2Up(noSegment + 1) ) )
   val tx1Output = UInt( width = 64 )
   val sof = ( segmentCounter === UInt( 0, log2Up(noSegment + 1) ) )

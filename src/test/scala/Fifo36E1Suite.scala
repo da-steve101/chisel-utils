@@ -13,7 +13,7 @@ class Fifo36E1TestSuite extends TestSuite {
       val io = new QueueIO( UInt( width = 72 ), 500 )
       val enqClk = Clock()
       val deqClk = Clock()
-      val testFifo = Module( new Fifo36E1( true, 72, 100, 500, enqClk, deqClk ) )
+      val testFifo = Module( new Fifo36E1( 72, 100, 500, enqClk, deqClk ) )
       testFifo.io.din := io.enq.bits( 71, 8 )
       testFifo.io.dip := io.enq.bits( 7, 0 )
       testFifo.io.wren := io.enq.valid

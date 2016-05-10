@@ -10,21 +10,21 @@ import scala.collection.mutable.ArrayBuffer
 class SerializerSuite extends TestSuite {
 
   @Test def testSerailizer {
-    class UserMod( val vecInSize : Int, val vecOutSize : Int) extends Module {
+    class UserMod( val vecInSize : Int, val vecOutSize : Int, val bitWidth : Int) extends Module {
       val io = new Bundle {
-        val dataIn = Decoupled( Vec.fill( vecInSize ) { UInt(INPUT, 4) } ).flip
+        val dataIn = Decoupled( Vec.fill( vecInSize ) { UInt(INPUT, bitWidth) } ).flip
         val flush = Bool(INPUT)
-        val dataOut = Valid( Vec.fill( vecOutSize ) { UInt(OUTPUT, 4) } )
+        val dataOut = Valid( Vec.fill( vecOutSize ) { UInt(OUTPUT, bitWidth) } )
         val flushed = Bool(OUTPUT)
       }
-      val genType = UInt( width = 4 )
+      val genType = UInt( width = bitWidth )
       val serMod = Module(new Serializer(genType, vecInSize, vecOutSize))
       io <> serMod.io
     }
 
     class UserTests(c : UserMod, cycles : Int) extends Tester(c) {
       val myRand = new Random
-      val inputData = ArrayBuffer.fill( cycles ) { ArrayBuffer.fill( c.vecInSize ) { myRand.nextInt(16) } }
+      val inputData = ArrayBuffer.fill( cycles ) { ArrayBuffer.fill( c.vecInSize ) { myRand.nextInt( 1 << c.bitWidth ) } }
       var count = 0;
       var countOld = count
       var lastVld = false
@@ -63,11 +63,13 @@ class SerializerSuite extends TestSuite {
       }
     }
 
-    for ( vecOutSize <- 1 until 20 ) {
-      for ( vecInSize <- 1 until 20 ) {
-        chiselMainTest(Array("--genHarness", "--compile", "--test", "--backend", "c",
-          "--targetDir", dir.getPath.toString()), () => Module(
-          new UserMod( vecInSize, vecOutSize )) ) { c => new UserTests(c, scala.math.max( vecOutSize, vecInSize )*5 ) }
+    for ( bitWidth <- 1 until 10 ) {
+      for ( vecOutSize <- 1 until 20 ) {
+        for ( vecInSize <- 1 until 20 ) {
+          chiselMainTest(Array("--genHarness", "--compile", "--test", "--backend", "c",
+            "--targetDir", dir.getPath.toString()), () => Module(
+            new UserMod( vecInSize, vecOutSize, bitWidth )) ) { c => new UserTests(c, scala.math.max( vecOutSize, vecInSize )*5 ) }
+        }
       }
     }
   }
