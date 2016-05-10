@@ -44,7 +44,7 @@ class DataSeparatorSuite extends TestSuite {
         step(1)
       }
     }
-    for ( noBO <- Array( 100 ) ) {
+    for ( noBO <- 96 until 104 ) {
       chiselMainTest(Array("--genHarness", "--compile", "--test", "--backend", "c"), () => {
         Module( new DataSeparator( noBO ) ) }) { c => new DataSepTests( c ) }
     }

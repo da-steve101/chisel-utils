@@ -44,8 +44,12 @@ class DataSeparator ( val bytesOut : Int ) extends Module {
       regCnt := regCnt + UInt( 8 - padSize )
     }
   }
-
-  io.deq.bits := outMod
-  io.deq.valid := io.enq.valid
-
+  val deqVld = Reg( Bool() )
+  val deqBits = Reg( outMod )
+  io.deq.bits := deqBits
+  io.deq.valid := deqVld
+  when ( io.deq.ready ) {
+    deqVld := io.enq.valid
+    deqBits := outMod
+  }
 }

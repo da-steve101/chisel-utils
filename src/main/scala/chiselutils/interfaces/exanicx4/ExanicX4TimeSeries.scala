@@ -62,17 +62,21 @@ class ExanicX4TimeSeries[ T <: Bits ]( genType : T, fifoDepth : Int, memSize : I
   userMod.io.dataIn <> fifo.io.deq
   val memData = userMem.read( userMod.io.memAddr )
   userMod.io.memData := UInt(0, 128)
-  (0 until 16).foreach( idx => { userMod.io.memData(8*(idx + 1) - 1, 8*idx) := memData(idx) } )
+  for ( idx <- 0 until 16 )
+    userMod.io.memData(8*(idx + 1) - 1, 8*idx) := memData(idx)
 
-  (0 until noReg).foreach( idx => { userMod.io.regIn(idx) := regIntR(idx) } )
-  when ( userMod.io.regOutEn ) {
-    (0 until noReg).foreach( idx => { regIntW(idx) := userMod.io.regOut(idx) } )
+  for ( idx <- 0 until noReg ) {
+    userMod.io.regIn(idx) := regIntR(idx)
+    when ( userMod.io.regOutEn ) {
+      regIntW(idx) := userMod.io.regOut(idx)
+    }
   }
 
   // combine time series output
   val noOutputs = math.ceil( bytesOut*8.0/userMod.bwOfGenType ).toInt - 1
   val vecDataOut = Vec.fill( userMod.bwOfGenType ) { UInt( width = 1 ) }
-  ( 0 until userMod.bwOfGenType ).foreach( x => { vecDataOut(x) := userMod.io.dataOut.bits(x) } )
+  for( x <- 0 until userMod.bwOfGenType )
+    vecDataOut(x) := userMod.io.dataOut.bits(x)
 
   val outToBuffer = Module( new Serializer( UInt( width = 1 ), userMod.bwOfGenType, 64 ) )
   outToBuffer.io.dataIn.bits := vecDataOut
@@ -120,7 +124,7 @@ class ExanicX4TimeSeries[ T <: Bits ]( genType : T, fifoDepth : Int, memSize : I
     userErr := Bool(false)
   }
 
-  val noSegment = math.ceil( bytesOut/8.0 ).toInt
+  val noSegment = math.floor( bytesOut/8.0 ).toInt
   val segmentCounter = RegInit( UInt( 0, log2Up(noSegment + 1) ) )
   val tx1Output = UInt( width = 64 )
   val sof = ( segmentCounter === UInt( 0, log2Up(noSegment + 1) ) )
@@ -147,7 +151,7 @@ class ExanicX4TimeSeries[ T <: Bits ]( genType : T, fifoDepth : Int, memSize : I
   statusVal := directOutputFifo.io.count ## fifoTxOut.io.count ## segmentCounter ## error
 
   val sending = RegInit( Bool(false) )
-  sending := sending || ( fifoTxOut.io.count >= UInt( noSegment, log2Up(fifoDepth) ) )
+  sending := sending || ( fifoTxOut.io.count > UInt( noSegment, log2Up(fifoDepth) ) )
   when ( ( eof && io.tx1Usr.hndshk.vld && io.tx1Usr.ack ) || fifoDrain ) {
     sending := Bool(false)
   }
