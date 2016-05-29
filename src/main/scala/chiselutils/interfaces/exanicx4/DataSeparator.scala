@@ -23,8 +23,8 @@ class DataSeparator ( val bytesOut : Int ) extends Module {
   for ( idx <- 0 until 8 ) {
     bitsIdx(idx) := ( UInt( idx, 3 ) + regCnt )
     outMod( idx ) := io.enq.bits( bitsIdx(idx) )
-    when ( bitsIdx(idx) < regCnt ) {
-      outMod(idx) := regBuf( bitsIdx(idx) )
+    when ( UInt(idx) < regCnt ) {
+      outMod( idx ) := regBuf( bitsIdx(idx) )
     }
     when ( io.enq.valid && io.enq.ready ) {
       regBuf(idx) := io.enq.bits( idx )

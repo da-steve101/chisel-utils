@@ -33,8 +33,8 @@ class AsyncFifoXilinx[ T <: Data ] ( genType : T, entries : Int, enqClk : Clock,
   for ( fifoIdx <- 0 until no36Fifo ) {
     fifo72Bit(fifoIdx).io.din := din( math.min( ( fifoIdx + 1 )*72 - 1, genType.getWidth() - 1 ), ( fifoIdx + 1 )*72 - 64 )
     fifo72Bit(fifoIdx).io.dip := din( math.min( ( fifoIdx + 1 )*72 - 65, genType.getWidth() - 1 ), fifoIdx*72 )
-    fifo72Bit(fifoIdx).io.wren := io.enq.valid
-    fifo72Bit(fifoIdx).io.rden := io.deq.ready
+    fifo72Bit(fifoIdx).io.wren := io.enq.valid && !reset
+    fifo72Bit(fifoIdx).io.rden := io.deq.ready && !reset
   }
 
   val enqRdy = {
