@@ -54,12 +54,9 @@ class Fifo36E1Io( dataWidth : Int ) extends Bundle {
 }
 
 class Fifo36E1Param( almostFull : Int, almostEmpty : Int, fwft : Boolean, doReg : Int,
-  dataWidth : Int, fifoMode : String, enSyn : Boolean, srVal : Int, init : Int ) extends VerilogParameters {
+  dataWidth : Int, enSyn : Boolean, srVal : Int, init : Int ) extends VerilogParameters {
   if ( !Array( 4, 9, 18, 36, 72 ).contains( dataWidth ) ) {
     ChiselError.error( "dataWidth must be 4, 9, 18, 36 or 72" )
-  }
-  if ( !Array( "FIFO36", "FIFO36_72", "FIFO18", "FIFO18_36" ).contains( fifoMode ) ) {
-    ChiselError.error( "invalid fifoMode" )
   }
   if ( enSyn && fwft ) {
     ChiselError.error( "enSyn and fwft cannot be set simultaneously" )
@@ -76,11 +73,11 @@ class Fifo36E1Param( almostFull : Int, almostEmpty : Int, fwft : Boolean, doReg 
 
   val ALMOST_FULL_OFFSET = almostFull
   val ALMOST_EMPTY_OFFSET = almostEmpty
-  val FIRST_WORD_FALL_THROUGH = fwft
+  val FIRST_WORD_FALL_THROUGH = { if (fwft) "TRUE" else "FALSE" }
   val DO_REG = doReg
   val DATA_WIDTH = dataWidth
-  val FIFO_MODE = fifoMode
-  val EN_SYN = enSyn
+  val FIFO_MODE = { if ( dataWidth == 72 ) "FIFO36_72" else "FIFO36" }
+  val EN_SYN = { if (enSyn) "TRUE" else "FALSE" }
   val SRVAL = srVal
   val INIT = init
 }
@@ -142,7 +139,7 @@ class Fifo36E1( val dataWidth : Int, val almostEmpty : Int,
   io.dop := simFifo.io.deq.bits( io.dop.getWidth() - 1, 0 )
 
   val verParams = new Fifo36E1Param( almostFull, almostEmpty, fwft, doReg,
-    dataWidth, "FIFO36", enSyn, srVal, init )
+    dataWidth, enSyn, srVal, init )
 
   setVerilogParameters( verParams )
 

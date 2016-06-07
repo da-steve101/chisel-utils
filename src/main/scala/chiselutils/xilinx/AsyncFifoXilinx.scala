@@ -2,6 +2,11 @@ package chiselutils.xilinx
 
 import Chisel._
 
+class AsyncFifoXilinxIO[ T <: Data]( genType : T, entries : Int, errWidth : Int ) extends QueueIO( genType, entries ) {
+  val werr = Vec.fill( errWidth ) { Bool(OUTPUT) }
+  val rerr = Vec.fill( errWidth ) { Bool(OUTPUT) }
+}
+
 /** This module uses xilinx fifo blocks to implement an asyncFifo
   */
 class AsyncFifoXilinx[ T <: Data ] ( genType : T, entries : Int, enqClk : Clock, deqClk : Clock ) extends Module {
@@ -14,17 +19,16 @@ class AsyncFifoXilinx[ T <: Data ] ( genType : T, entries : Int, enqClk : Clock,
   if ( entries < 6 ) {
     ChiselError.error( "Less than 6 entries in async fifo not supported" )
   }
+  val noPart = math.ceil( genType.getWidth()/36.0 ).toInt
+  val no18Fifo = noPart % 2
+  val no36Fifo = ( noPart - no18Fifo )/2
 
-  val io = new QueueIO( genType, entries )
+  val io = new AsyncFifoXilinxIO( genType, entries, no18Fifo + no36Fifo )
 
   val din = UInt( width = genType.getWidth() ).fromBits(io.enq.bits.flatten.map( x => x._2 ).reduceLeft(_ ## _))
   val dout = UInt( width = genType.getWidth() )
   dout := UInt( 0 ) // default assign
   io.deq.bits := genType.fromBits( dout )
-
-  val noPart = math.ceil( genType.getWidth()/36.0 ).toInt
-  val no18Fifo = noPart % 2
-  val no36Fifo = ( noPart - no18Fifo )/2
 
   val fifo72Bit = Array.fill( no36Fifo ) { Module( new Fifo36E1( 72, 10, entries, enqClk, deqClk ) ) }
   // TODO: replace this with a fifo18
@@ -33,8 +37,10 @@ class AsyncFifoXilinx[ T <: Data ] ( genType : T, entries : Int, enqClk : Clock,
   for ( fifoIdx <- 0 until no36Fifo ) {
     fifo72Bit(fifoIdx).io.din := din( math.min( ( fifoIdx + 1 )*72 - 1, genType.getWidth() - 1 ), ( fifoIdx + 1 )*72 - 64 )
     fifo72Bit(fifoIdx).io.dip := din( math.min( ( fifoIdx + 1 )*72 - 65, genType.getWidth() - 1 ), fifoIdx*72 )
-    fifo72Bit(fifoIdx).io.wren := io.enq.valid && !reset
-    fifo72Bit(fifoIdx).io.rden := io.deq.ready && !reset
+    fifo72Bit(fifoIdx).io.wren := io.enq.valid && !reset && !fifo72Bit(fifoIdx).io.almostFull
+    fifo72Bit(fifoIdx).io.rden := io.deq.ready && !reset && !fifo72Bit(fifoIdx).io.empty
+    io.werr(fifoIdx) := fifo72Bit(fifoIdx).io.wrErr
+    io.rerr(fifoIdx) := fifo72Bit(fifoIdx).io.rdErr
   }
 
   val enqRdy = {
@@ -56,8 +62,10 @@ class AsyncFifoXilinx[ T <: Data ] ( genType : T, entries : Int, enqClk : Clock,
   if ( no18Fifo != 0 ) {
     fifo36Bit(0).io.din := din( genType.getWidth() - 1, math.min( 4, remWidth - 1 ) + offWidth )
     fifo36Bit(0).io.dip := din( math.min( 3, remWidth - 1 ) + offWidth, offWidth )
-    fifo36Bit(0).io.wren := io.enq.valid
-    fifo36Bit(0).io.rden := io.deq.ready
+    fifo36Bit(0).io.wren := io.enq.valid && !reset && !fifo36Bit(0).io.almostFull
+    fifo36Bit(0).io.rden := io.deq.ready && !reset && !fifo36Bit(0).io.empty
+    io.werr(no36Fifo) := fifo36Bit(0).io.wrErr
+    io.rerr(no36Fifo) := fifo36Bit(0).io.rdErr
     io.enq.ready :=  enqRdy && !fifo36Bit(0).io.almostFull
     io.deq.valid :=  deqVld && !fifo36Bit(0).io.empty
   } else {
