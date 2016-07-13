@@ -124,7 +124,7 @@ class ExanicX4TimeSeries[ T <: Bits ]( genType : T, fifoDepth : Int, memSize : I
     userErr := Bool(false)
   }
 
-  val noSegment = math.floor( bytesOut/8.0 ).toInt
+  val noSegment = math.floor( (bytesOut - 1)/8.0 ).toInt
   val segmentCounter = RegInit( UInt( 0, log2Up(noSegment + 1) ) )
   val tx1Output = UInt( width = 64 )
   val sof = ( segmentCounter === UInt( 0, log2Up(noSegment + 1) ) )
