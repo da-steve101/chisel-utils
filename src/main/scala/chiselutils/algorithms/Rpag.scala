@@ -98,7 +98,7 @@ object RPAG extends LazyLogging {
     sS.toList
   }
 
-  def insertRightShift( x : UInt, rawVal : BigInt, outVal : BigInt ) : UInt = {
+  def insertRightShift( x : SInt, rawVal : BigInt, outVal : BigInt ) : SInt = {
     if ( rawVal == outVal )
       x
     else {
@@ -107,7 +107,7 @@ object RPAG extends LazyLogging {
     }
   }
 
-  def getAdd( a : UInt, b : UInt, aVal : BigInt, bVal : BigInt, cMax : Int, outVal : BigInt ) : UInt = {
+  def getAdd( a : SInt, b : SInt, aVal : BigInt, bVal : BigInt, cMax : Int, outVal : BigInt ) : SInt = {
     if ( aVal == outVal )
       return a
     if ( bVal == outVal )
@@ -123,60 +123,35 @@ object RPAG extends LazyLogging {
     val aIsMax = ( aVal.max(bVal) == aVal )
     val combIdx = ( ( idx - 2 ) % 4 )
     // Adder logic
+    val rMaxVal = { if ( aIsMax ) aVal else bVal }
+    val rMinVal = { if ( aIsMax ) bVal else aVal }
+    val rMax = { if ( aIsMax ) a else b }
+    val rMin = { if ( aIsMax ) b else a }
+    // when adding need to do signed bit extend
     val res = {
       if ( idx == 0 ) {
-        logger.debug( "doing " + aVal + " + " + bVal )
-        insertRightShift( a + b, aVal + bVal, outVal )
+        logger.debug( "doing " + rMaxVal + " + " + rMinVal )
+        insertRightShift( rMax + rMin, rMaxVal + rMinVal, outVal )
       } else if ( idx == 1 ) {
-        if ( aIsMax ) {
-          logger.debug( "doing " + aVal + " - " + bVal )
-          insertRightShift( a - b, aVal - bVal, outVal )
-        } else {
-          logger.debug( "doing " + bVal + " - " + aVal )
-          insertRightShift( b - a, bVal - aVal, outVal )
-        }
+        logger.debug( "doing " + rMaxVal + " - " + rMinVal )
+        insertRightShift( rMax - rMin, rMaxVal - rMinVal, outVal )
       } else {
         if ( combIdx == 0 ) {
-          if ( aIsMax ) {
-            logger.debug( "doing " + aVal + " << " + kIdx + " + " + bVal )
-            insertRightShift( (a << powOfK) + b, (aVal << kIdx) + bVal, outVal )
-          } else {
-            logger.debug( "doing " + bVal + " << " + kIdx + " + " + aVal )
-            insertRightShift( (b << powOfK) + a, (bVal << kIdx) + aVal, outVal )
-          }
+          logger.debug( "doing " + rMaxVal + " << " + kIdx + " + " + rMinVal )
+          insertRightShift( ( rMax << powOfK ) + rMin, (rMaxVal << kIdx) + rMinVal, outVal )
         } else if ( combIdx == 1 ) {
-          if ( aIsMax ) {
-            logger.debug( "doing " + aVal + " << " + kIdx + " - " + bVal )
-            insertRightShift( (a << powOfK) - b, (aVal << kIdx) - bVal, outVal )
-          } else {
-            logger.debug( "doing " + bVal + " << " + kIdx + " - " + aVal )
-            insertRightShift( (b << powOfK) - a, (bVal << kIdx) - aVal, outVal )
-          }
+          logger.debug( "doing " + rMaxVal + " << " + kIdx + " - " + rMinVal )
+          insertRightShift( (rMax << powOfK) - rMin, (rMaxVal << kIdx) - rMinVal, outVal )
         } else if ( combIdx == 2 ) {
-          if ( aIsMax ) {
-            logger.debug( "doing " + aVal + " + " + bVal + " << " + kIdx )
-            insertRightShift( a + ( b << powOfK ), aVal + (bVal << kIdx), outVal )
-          } else {
-            logger.debug( "doing " + bVal + " + " + aVal + " << " + kIdx )
-            insertRightShift( b + ( a << powOfK ), bVal + (aVal << kIdx), outVal )
-          }
+          logger.debug( "doing " + rMaxVal + " + " + rMinVal + " << " + kIdx )
+          insertRightShift( rMax + (rMin << powOfK ), rMaxVal + (rMinVal << kIdx), outVal )
         } else {
-          if ( aIsMax ) {
-            if ( aVal > ( bVal << kIdx ) ) {
-              logger.debug( "doing " + aVal + " - " + bVal + " << " + kIdx )
-              insertRightShift( a - ( b << powOfK ), aVal - (bVal << kIdx), outVal )
-            } else {
-              logger.debug( "doing " + bVal + " << " + kIdx + " - " + aVal )
-              insertRightShift( ( b << powOfK ) - a, (bVal << kIdx) - aVal, outVal )
-            }
+          if ( rMaxVal > ( rMinVal << kIdx ) ) {
+            logger.debug( "doing " + rMaxVal + " - " + rMinVal + " << " + kIdx )
+            insertRightShift( rMax - ( rMin << powOfK ), rMaxVal - ( rMinVal << kIdx), outVal )
           } else {
-            if ( bVal > ( aVal << kIdx ) ) {
-              logger.debug( "doing " + bVal + " - " + aVal + " << " + kIdx )
-              insertRightShift( b - ( a << powOfK ), bVal - (aVal << kIdx), outVal )
-            } else {
-              logger.debug( "doing " + aVal + " << " + kIdx + " - " + bVal )
-              insertRightShift( ( a << powOfK ) - b, (aVal << kIdx) - bVal, outVal )
-            }
+            logger.debug( "doing " + rMinVal + " << " + kIdx + " - " + rMaxVal )
+            insertRightShift( (rMin << powOfK ) - rMax, ( rMinVal << kIdx ) - rMaxVal, outVal )
           }
         }
       }
@@ -367,7 +342,7 @@ object RPAG extends LazyLogging {
 
   /** Adder layer format: ( outVal, ( aVal, aIdx ), ( bVal, bIdx ) )
     */
-  def implementAdderLayer( xIn : List[UInt], adderLyr : Set[(BigInt, (BigInt, Int), (BigInt, Int))], cMax : Int ) : List[(UInt, BigInt)] = {
+  def implementAdderLayer( xIn : List[SInt], adderLyr : Set[(BigInt, (BigInt, Int), (BigInt, Int))], cMax : Int ) : List[(SInt, BigInt)] = {
     logger.debug( "adderLyr = " + adderLyr )
     logger.debug( "xIn = " + xIn )
     adderLyr.map( x => {
@@ -377,12 +352,12 @@ object RPAG extends LazyLogging {
       val bVal = x._3._1
       val bIdx = x._3._2
       logger.debug( "x = " + x )
-      val xOut = getAdd( xIn(aIdx), xIn(bIdx), aVal, bVal, cMax, outVal) + UInt(0) // Otherwise get direction mixing errors
+      val xOut = getAdd( xIn(aIdx), xIn(bIdx), aVal, bVal, cMax, outVal)
       ( xOut, outVal )
     }).toList
   }
 
-  def implementAdder( xIn : UInt, cMax : Int, adderStructure : List[Set[(BigInt, BigInt, BigInt)]], t : List[BigInt] ) : Vec[UInt] = {
+  def implementAdder( xIn : SInt, cMax : Int, adderStructure : List[Set[(BigInt, BigInt, BigInt)]], t : List[BigInt] ) : Vec[SInt] = {
     val firstNumbers = adderStructure(0).map( x => Set( x._2, x._3 ) ).reduce( _ ++ _ )
 
     var currLyr = firstNumbers.map( fn => {
@@ -391,7 +366,7 @@ object RPAG extends LazyLogging {
       // c(0)._1 == 0
       // c(1)._2 == true
       logger.debug( fn + " as csd = " + csd )
-      val res : ( UInt, BigInt ) = {
+      val res = {
         if ( csd.size == 2 ) {
           val xShift = xIn << UInt( csd(1)._1 )
           if ( csd(0)._2 )
@@ -399,7 +374,7 @@ object RPAG extends LazyLogging {
           else
             ( xShift - xIn, fn )
         } else // if size 1 then can only be 1
-          ( xIn, BigInt(1) )
+          ( xIn + SInt(0), BigInt(1) )
       }
       res
     }).toList

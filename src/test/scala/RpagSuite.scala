@@ -11,8 +11,8 @@ class RpagSuite extends TestSuite {
 
   class UserMod( numsIn : List[BigInt], cMax : Int, bw : Int ) extends Module {
     val io = new Bundle {
-      val xIn = UInt( INPUT, bw )
-      val vecOut = Vec( numsIn.size, UInt( OUTPUT, bw ))
+      val xIn = SInt( INPUT, bw )
+      val vecOut = Vec( numsIn.size, SInt( OUTPUT, bw ))
     }
     val addMapping = RPAG( numsIn )
     println( addMapping )
@@ -95,6 +95,26 @@ class RpagSuite extends TestSuite {
       println( "Using " + numsIn )
       for ( cyc <- ( 0 until 10 ) ) {
         val x = myRand.nextInt(100)
+        poke( c.io.xIn, x )
+        for ( n <- numsIn.zipWithIndex )
+          expect( c.io.vecOut(n._2), x*n._1 )
+      }
+    }
+
+    chiselMainTest(Array("--genHarness", "--compile", "--test", "--backend", "c"), () => {
+      Module( new UserMod( numsIn, 128, 16 ) ) }) { c => new UserModTests( c ) }
+
+  }
+
+  @Test def negInputTest {
+    val myRand = new Random
+    val numsGen = List.fill( 10 ) { myRand.nextInt(100) }
+    val numsIn = numsGen.map( BigInt(_) ).map( x => (x >> x.lowestSetBit) ).distinct
+
+    class UserModTests( c : UserMod ) extends Tester( c ) {
+      println( "Using " + numsIn )
+      for ( cyc <- ( 0 until 10 ) ) {
+        val x = -myRand.nextInt(100)
         poke( c.io.xIn, x )
         for ( n <- numsIn.zipWithIndex )
           expect( c.io.vecOut(n._2), x*n._1 )
