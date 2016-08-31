@@ -4,10 +4,10 @@ package chiselutils.math
 import Chisel._
 import chiselutils.algorithms.RPAG
 
-class ConstMult( genType : Fixed, multVar : List[BigInt] ) extends Module {
+class ConstMult( bitWidth : Int, fracWidth : Int, multVar : List[BigInt] ) extends Module {
   val io = new Bundle {
-    val in = genType.cloneType.asInput
-    val out = Vec( multVar.size, genType.cloneType ).asOutput
+    val in = Fixed( INPUT, bitWidth, fracWidth )
+    val out = Vec( multVar.size, Fixed( OUTPUT, bitWidth, fracWidth ) )
   }
 
   /* Preprocessing:
@@ -22,19 +22,31 @@ class ConstMult( genType : Fixed, multVar : List[BigInt] ) extends Module {
   val dupIdxs = shiftIdxs.groupBy( _._1 )
   val t = dupIdxs.map( _._1 ).toList
   val addMapping = RPAG( t )
-  val xIn = SInt( width = genType.getWidth() ).fromBits( io.in )
-  val wOut = RPAG.implementAdder( xIn, t.max.toInt*4, addMapping, t )
+  val xIn = SInt( width = bitWidth ).fromBits( io.in )
+  val wOut = RPAG.implementAdder( xIn, addMapping, t )
+
+  def latency : Int = {
+    if ( addMapping.size > 1 )
+      addMapping.size + 1
+    else {
+      if ( addMapping(0).filter( x => ( x._1 == x._2 && x._2 == x._3 )).size ==
+        addMapping(0).size )
+        1
+      else
+        2
+    }
+  }
 
   // default to 0
   for ( z <- (0 until multVar.size) )
-    io.out(z) := Fixed(0, genType.getWidth(), genType.getFractionalWidth() )
+    io.out(z) := Fixed(0, bitWidth, fracWidth )
   for ( i <- ( 0 until t.size ) ) {
     val wo = wOut(i)
     for ( d <- dupIdxs( t(i) ) ) {
       val woMod = { if ( negIdxs.find( _._2 == d._3).get._3 ) -wo else wo } << UInt(d._2) // undo shift right
       // after multiply in fixed need to shift right
-      val woLo = genType.getFractionalWidth()
-      val woHigh = woLo + genType.getWidth() - 1
+      val woLo = fracWidth
+      val woHigh = woLo + bitWidth - 1
       val woModWidth = woMod.getWidth()
       val woTrim = {
         if ( woModWidth > woHigh )
@@ -44,7 +56,7 @@ class ConstMult( genType : Fixed, multVar : List[BigInt] ) extends Module {
           sext ## woMod( woModWidth - 1, woLo )
         }
       }
-      val fv = genType.cloneType.fromBits(woTrim)
+      val fv = Fixed( width = bitWidth, fracWidth = fracWidth ).fromBits(woTrim)
       io.out(d._3) := fv
     }
   }

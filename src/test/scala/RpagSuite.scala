@@ -15,8 +15,11 @@ class RpagSuite extends TestSuite {
       val vecOut = Vec( numsIn.size, SInt( OUTPUT, bw ))
     }
     val addMapping = RPAG( numsIn )
+    def latency : Int = {
+      addMapping.size + 1
+    }
     println( addMapping )
-    val adderOut = RPAG.implementAdder( io.xIn, cMax, addMapping, numsIn )
+    val adderOut = RPAG.implementAdder( io.xIn, addMapping, numsIn )
     println( adderOut )
     io.vecOut := adderOut
   }
@@ -62,6 +65,7 @@ class RpagSuite extends TestSuite {
 
     class UserModTests( c : UserMod ) extends Tester( c ) {
       poke( c.io.xIn, 5 )
+      step( c.latency )
       expect( c.io.vecOut(0), 15 )
       expect( c.io.vecOut(1), 45 )
       expect( c.io.vecOut(2), 55 )
@@ -77,6 +81,7 @@ class RpagSuite extends TestSuite {
 
     class UserModTests( c : UserMod ) extends Tester( c ) {
       poke( c.io.xIn, 5 )
+      step( c.latency )
       expect( c.io.vecOut(0), 265 )
       expect( c.io.vecOut(1), 445 )
       expect( c.io.vecOut(2), 555 )
@@ -96,6 +101,7 @@ class RpagSuite extends TestSuite {
       for ( cyc <- ( 0 until 10 ) ) {
         val x = myRand.nextInt(100)
         poke( c.io.xIn, x )
+        step( c.latency )
         for ( n <- numsIn.zipWithIndex )
           expect( c.io.vecOut(n._2), x*n._1 )
       }
@@ -116,6 +122,7 @@ class RpagSuite extends TestSuite {
       for ( cyc <- ( 0 until 10 ) ) {
         val x = -myRand.nextInt(100)
         poke( c.io.xIn, x )
+        step( c.latency )
         for ( n <- numsIn.zipWithIndex )
           expect( c.io.vecOut(n._2), x*n._1 )
       }

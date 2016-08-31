@@ -110,22 +110,23 @@ object RPAG extends LazyLogging {
   }
 
   /** Generate the adder logic */
-  def getAdd( a : SInt, b : SInt, aVal : BigInt, bVal : BigInt, cMax : Int, outVal : BigInt, scIdx : Int = -1 ) : SInt = {
+  def getAdd( a : SInt, b : SInt, aVal : BigInt, bVal : BigInt, outVal : BigInt, idx : Int ) : SInt = {
     if ( aVal == outVal )
       return a
     if ( bVal == outVal )
       return b
 
-    val idx = {
-      if ( scIdx < 0 ) {
-        val sc = succ( aVal, bVal, cMax, false, false )
-        val validIdxs = sc.filter( x => { x._1 == outVal } ).map( _._2 ).toList
-        if ( validIdxs.size == 0 )
-          NoResultException( "No add could be found as a combination of these numbers" )
-        validIdxs(0)
-      } else
-        scIdx
-    }
+    if( idx < 0 )
+      ChiselError.error( "Invalid operation index" )
+
+    /*
+     val sc = succ( aVal, bVal, cMax, false, false )
+     val validIdxs = sc.filter( x => { x._1 == outVal } ).map( _._2 ).toList
+     if ( validIdxs.size == 0 )
+     NoResultException( "No add could be found as a combination of these numbers" )
+     val idx = validIdxs(0)
+     */
+
     val isSub = ( ( idx % 2 ) == 1 )
     val kIdx = (( idx - 2)/4) + 1
     val powOfK = UInt(kIdx)
@@ -354,7 +355,7 @@ object RPAG extends LazyLogging {
   /** Creates an adder layer using xIn inputs and the structure defined in adderLyr
     * Adder layer format: ( outVal, ( aVal, aIdx ), ( bVal, bIdx ), opIdx )
     */
-  def implementAdderLayer( xIn : List[SInt], adderLyr : Set[(BigInt, (BigInt, Int), (BigInt, Int), Int)], cMax : Int ) : List[(SInt, BigInt)] = {
+  def implementAdderLayer( xIn : List[SInt], adderLyr : Set[(BigInt, (BigInt, Int), (BigInt, Int), Int)] ) : List[(SInt, BigInt)] = {
     logger.debug( "adderLyr = " + adderLyr )
     logger.debug( "xIn = " + xIn )
     adderLyr.map( x => {
@@ -365,14 +366,14 @@ object RPAG extends LazyLogging {
       val bIdx = x._3._2
       val opIdx = x._4
       logger.debug( "x = " + x )
-      val xOut = getAdd( xIn(aIdx), xIn(bIdx), aVal, bVal, cMax, outVal, opIdx)
+      val xOut = getAdd( xIn(aIdx), xIn(bIdx), aVal, bVal, outVal, opIdx)
       ( xOut, outVal )
     }).toList
   }
 
   /** Implement an adder based on the structure defined in adderStructure
     */
-  def implementAdder( xIn : SInt, cMax : Int, adderStructure : List[Set[(BigInt, BigInt, BigInt, Int)]], t : List[BigInt] ) : Vec[SInt] = {
+  def implementAdder( xIn : SInt, adderStructure : List[Set[(BigInt, BigInt, BigInt, Int)]], t : List[BigInt] ) : Vec[SInt] = {
     val firstNumbers = adderStructure(0).map( x => Set( x._2, x._3 ) ).reduce( _ ++ _ )
 
     var currLyr = firstNumbers.map( fn => {
@@ -383,16 +384,24 @@ object RPAG extends LazyLogging {
       logger.debug( fn + " as csd = " + csd )
       val res = {
         if ( csd.size == 2 ) {
-          val xShift = xIn << UInt( csd(1)._1 )
+          val xShift = xIn << UInt( csd(1)._1, log2Up(csd(1)._1) + 1)
           if ( csd(0)._2 )
             ( xShift + xIn, fn )
           else
             ( xShift - xIn, fn )
         } else // if size 1 then can only be 1
-          ( xIn + SInt(0), BigInt(1) )
+          ( xIn, BigInt(1) )
       }
       res
     }).toList
+
+    // Add a register for first layer
+    currLyr = currLyr.map( x => {
+      // Hack as RegNext gives width error
+      val r = Reg( SInt( width = x._1.getWidth() ) )
+      r := x._1
+      ( r, x._2 )
+    } )
 
     // check small number case
     if ( adderStructure.size == 1 && adderStructure(0).filter( x => ( x._1 == x._2 && x._2 == x._3 ) ).size == adderStructure(0).size ) {
@@ -408,8 +417,12 @@ object RPAG extends LazyLogging {
             ( x._3, currLyr.map( _._2 ).indexOf( x._3 ) ), // ( bVal, bIdx )
             x._4                                           // The opIdx
           )
-        }),
-        cMax )
+        }) ).map( x => {
+          // Hack as RegNext doesn't work
+          val r = Reg( SInt( width = x._1.getWidth() ) )
+          r := x._1
+          ( r, x._2 )
+        } )
     }
     Vec( t.map( x => currLyr.find( _._2 == x ).get._1 ) )
   }
@@ -430,7 +443,7 @@ object RPAG extends LazyLogging {
     val adderConst = ArrayBuffer[Set[(BigInt, BigInt, BigInt, Int)]]( )
     for ( s <- (2 until S + 1).reverse ) {
       val W = X.last // working set is all in current stage
-      val P = collection.mutable.Set[BigInt]()
+      val P = collection.mutable.Set[BigInt]() // Numbers for previous stage
       val layerSet = collection.mutable.Set[(BigInt, BigInt, BigInt, Int)]()
       while ( W.size > 0 ) {
         logger.info( "P = " + P )
