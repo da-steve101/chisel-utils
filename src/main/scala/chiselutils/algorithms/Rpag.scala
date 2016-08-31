@@ -72,32 +72,34 @@ object RPAG extends LazyLogging {
 
   /** Get all possible values using combinations of r1 and r2
     */
-  def succ( r1 : BigInt, r2 : BigInt, cMax : Int, excludeR : Boolean, excludeOne : Boolean) : List[BigInt] = {
+  def succ( r1 : BigInt, r2 : BigInt, cMax : Int, excludeR : Boolean, excludeOne : Boolean) : List[(BigInt, Int)] = {
     val rMax = r1.max(r2)
     val rMin = r1.min(r2)
     if ( rMax > cMax ) {
       logger.warn( "cMax should be bigger than r1,r2" )
-      return List[BigInt]()
+      return List[(BigInt, Int)]()
     }
 
     val kMax = log2Ceil((cMax.doubleValue - rMax.doubleValue)/rMin.doubleValue )
-    val sS = ArrayBuffer[BigInt]()
-    sS += fundamental(rMax + rMin)
-    sS += fundamental(rMax - rMin)
+    val sS = ArrayBuffer[(BigInt, Int)]()
+    sS += (( fundamental(rMax + rMin), sS.size ))
+    sS += (( fundamental(rMax - rMin), sS.size ))
     for ( k <- ( 1 until kMax + 1 ) ) {
       val kto2 = BigInt(1) << k
-      sS += fundamental(rMax * kto2 + rMin)
-      sS += fundamental(rMax * kto2 - rMin)
-      sS += fundamental(rMax + rMin * kto2)
-      sS += fundamental(( rMax - rMin * kto2 ).abs)
+      sS += (( fundamental(rMax * kto2 + rMin), sS.size ))
+      sS += (( fundamental(rMax * kto2 - rMin), sS.size ))
+      sS += (( fundamental(rMax + rMin * kto2), sS.size ))
+      sS += (( fundamental(( rMax - rMin * kto2 ).abs), sS.size ))
     }
-    if ( excludeR )
-      sS -= ( BigInt(0), rMax, rMin )
-    if ( excludeOne )
-      sS -= ( BigInt(0), BigInt(1) )
-    sS.toList
+    val sSFilt = sS.filter( s => {
+      ( !excludeR || !List( rMax, rMin ).contains( s._1 ) ) &&
+      ( !excludeOne || BigInt(1) != s._1 ) &&
+      ( BigInt(0) != s._1 )
+    }).groupBy( _._1 ).map( s => s._2(0) )
+    sSFilt.toList
   }
 
+  /** Check if number formed using back shift. eg) ( 3x + 7x ) >> 1 = 5x */
   def insertRightShift( x : SInt, rawVal : BigInt, outVal : BigInt ) : SInt = {
     if ( rawVal == outVal )
       x
@@ -107,16 +109,23 @@ object RPAG extends LazyLogging {
     }
   }
 
-  def getAdd( a : SInt, b : SInt, aVal : BigInt, bVal : BigInt, cMax : Int, outVal : BigInt ) : SInt = {
+  /** Generate the adder logic */
+  def getAdd( a : SInt, b : SInt, aVal : BigInt, bVal : BigInt, cMax : Int, outVal : BigInt, scIdx : Int = -1 ) : SInt = {
     if ( aVal == outVal )
       return a
     if ( bVal == outVal )
       return b
-    val sc = succ( aVal, bVal, cMax, false, false )
-    val validIdxs = sc.zipWithIndex.filter( x => { x._1 == outVal } ).map( _._2 ).toList
-    if ( validIdxs.size == 0 )
-      NoResultException( "No add could be found as a combination of these numbers" )
-    val idx = validIdxs(0)
+
+    val idx = {
+      if ( scIdx < 0 ) {
+        val sc = succ( aVal, bVal, cMax, false, false )
+        val validIdxs = sc.filter( x => { x._1 == outVal } ).map( _._2 ).toList
+        if ( validIdxs.size == 0 )
+          NoResultException( "No add could be found as a combination of these numbers" )
+        validIdxs(0)
+      } else
+        scIdx
+    }
     val isSub = ( ( idx % 2 ) == 1 )
     val kIdx = (( idx - 2)/4) + 1
     val powOfK = UInt(kIdx)
@@ -160,16 +169,14 @@ object RPAG extends LazyLogging {
   }
 
   /** Get all combinations of set P */
-  def succSet( P : Set[BigInt], cMax : Int, excludeR : Boolean, excludeOne : Boolean ) : Set[(BigInt, BigInt, BigInt)] = {
+  def succSet( P : Set[BigInt], cMax : Int, excludeR : Boolean, excludeOne : Boolean ) : Set[(BigInt, BigInt, BigInt, Int)] = {
     val sSAll = P.subsets.filter( s => s.size < 3 && s.size > 0 ).map( _.toList ).map( x => {
-      if ( x.size == 2 )
-        succ( x(0), x(1), cMax, excludeR, excludeOne ).map( s => { ( s, x(0), x(1) ) } )
-      else
-        succ( x(0), x(0), cMax, excludeR, excludeOne ).map( s => { ( s, x(0), x(0) ) } )
-    }).reduce( _ ++ _ )
+      val x2 = { if ( x.size == 2 ) x(1) else x(0) }
+      succ( x(0), x2, cMax, excludeR, excludeOne ).map( s => { ( s._1, x(0), x2, s._2 ) } )
+    }).reduce( _ ++ _ ).groupBy( _._1 ).map( x => x._2(0) ) // combine and get unique
     sSAll.filter( num => {
       ( !excludeR || !P.contains(num._1) ) && ( !excludeOne || !( BigInt(1) == num._1) ) && ( BigInt(0) != num._1 )
-    }).groupBy( _._1 ).map( x => x._2(0) ).toSet[(BigInt, BigInt, BigInt)]
+    }).toSet[(BigInt, BigInt, BigInt, Int)]
   }
 
   /** Get the best single number to add to P */
@@ -205,7 +212,7 @@ object RPAG extends LazyLogging {
       // topology c) check if we add one more then can be combined with whats already there
       val chkAry = collection.mutable.Set[BigInt]()
       for ( p <- P ) {
-        val sS = succ( w, p, cMax, true, false )
+        val sS = succ( w, p, cMax, true, false ).map( _._1 )
         for ( sc <- sS ) {
           if ( getAdMin( sc )  < s ) {
             if ( !chkAry.contains( sc ) ) {
@@ -263,14 +270,17 @@ object RPAG extends LazyLogging {
     Set[List[(Int, Boolean)]]() ++ validComb
   }
 
+  /** Shift right until is odd */
   def fundamental( xCsd : List[(Int, Boolean)] ) : List[(Int, Boolean)] = {
     xCsd.map( x => ( x._1 - xCsd(0)._1, x._2 ) ).toList
   }
 
+  /** Shift right until is odd */
   def fundamental( x : BigInt ) : BigInt = {
     x >> x.lowestSetBit
   }
 
+  /** Get the absolute value of a csd */
   def abs( xCsd : List[(Int, Boolean)] ) : List[(Int, Boolean)] = {
     if ( !xCsd.last._2 )
       xCsd.map( x => ( x._1, !x._2 ) ).toList
@@ -311,6 +321,7 @@ object RPAG extends LazyLogging {
     Set[(List[(Int, Boolean)],List[(Int, Boolean)])]() ++ pairSet
   }
 
+  /** Find the best two numbers to add to set P that have the highest gain */
   def bestPair( W : Set[BigInt], P : Set[BigInt], s : Int, bw : Int, cMax : Int ) : ( BigInt, BigInt, Double ) = {
 
     var bestPair = ( BigInt(0), BigInt(0) )
@@ -325,7 +336,7 @@ object RPAG extends LazyLogging {
       val xj = { if ( ap1 > ap2 ) ap2 else ap1 }
       if ( ( xi < 2*cMax ) && ( xj < 2*cMax ) ) {
         // find all W which can be removed if this pair is added
-        val sc = succ( xi, xj, cMax*2, true, false)
+        val sc = succ( xi, xj, cMax*2, true, false).map( _._1 )
         val combinationOfPair = W.toSet[BigInt].filter( x => sc.contains(x) )
         val gain = combinationOfPair.map( x => { 1/costA(x, xi, xj, bw, cMax ) }).reduce( _ + _ )/2
         if ( gain >= gainMax ) {
@@ -340,9 +351,10 @@ object RPAG extends LazyLogging {
     ( bestPair._1, bestPair._2, gainMax )
   }
 
-  /** Adder layer format: ( outVal, ( aVal, aIdx ), ( bVal, bIdx ) )
+  /** Creates an adder layer using xIn inputs and the structure defined in adderLyr
+    * Adder layer format: ( outVal, ( aVal, aIdx ), ( bVal, bIdx ), opIdx )
     */
-  def implementAdderLayer( xIn : List[SInt], adderLyr : Set[(BigInt, (BigInt, Int), (BigInt, Int))], cMax : Int ) : List[(SInt, BigInt)] = {
+  def implementAdderLayer( xIn : List[SInt], adderLyr : Set[(BigInt, (BigInt, Int), (BigInt, Int), Int)], cMax : Int ) : List[(SInt, BigInt)] = {
     logger.debug( "adderLyr = " + adderLyr )
     logger.debug( "xIn = " + xIn )
     adderLyr.map( x => {
@@ -351,13 +363,16 @@ object RPAG extends LazyLogging {
       val aIdx = x._2._2
       val bVal = x._3._1
       val bIdx = x._3._2
+      val opIdx = x._4
       logger.debug( "x = " + x )
-      val xOut = getAdd( xIn(aIdx), xIn(bIdx), aVal, bVal, cMax, outVal)
+      val xOut = getAdd( xIn(aIdx), xIn(bIdx), aVal, bVal, cMax, outVal, opIdx)
       ( xOut, outVal )
     }).toList
   }
 
-  def implementAdder( xIn : SInt, cMax : Int, adderStructure : List[Set[(BigInt, BigInt, BigInt)]], t : List[BigInt] ) : Vec[SInt] = {
+  /** Implement an adder based on the structure defined in adderStructure
+    */
+  def implementAdder( xIn : SInt, cMax : Int, adderStructure : List[Set[(BigInt, BigInt, BigInt, Int)]], t : List[BigInt] ) : Vec[SInt] = {
     val firstNumbers = adderStructure(0).map( x => Set( x._2, x._3 ) ).reduce( _ ++ _ )
 
     var currLyr = firstNumbers.map( fn => {
@@ -390,9 +405,10 @@ object RPAG extends LazyLogging {
         as.map( x => { // get this layer
           ( x._1,                                          // The out value
             ( x._2, currLyr.map( _._2 ).indexOf( x._2 ) ), // ( aVal, aIdx )
-            ( x._3, currLyr.map( _._2 ).indexOf( x._3 ) )  // ( bVal, bIdx )
+            ( x._3, currLyr.map( _._2 ).indexOf( x._3 ) ), // ( bVal, bIdx )
+            x._4                                           // The opIdx
           )
-        }), 
+        }),
         cMax )
     }
     Vec( t.map( x => currLyr.find( _._2 == x ).get._1 ) )
@@ -401,7 +417,7 @@ object RPAG extends LazyLogging {
   /** Run the RPAG algorithm
     * return the structure of the adder
     */
-  def apply( t : List[BigInt] ) : List[Set[(BigInt, BigInt, BigInt)]] = {
+  def apply( t : List[BigInt] ) : List[Set[(BigInt, BigInt, BigInt, Int)]] = {
 
     val bitsT = log2Ceil(t.reduce( (x,y) => x.max(y) )) + 1
     val cMax = math.pow(2, bitsT ).toInt
@@ -411,11 +427,11 @@ object RPAG extends LazyLogging {
     
     logger.info( "Using " + S + " layers" )
     val X = ArrayBuffer(collection.mutable.Set(t :_*)) // fill with initial numbers
-    val adderConst = ArrayBuffer[Set[(BigInt, BigInt, BigInt)]]( )
+    val adderConst = ArrayBuffer[Set[(BigInt, BigInt, BigInt, Int)]]( )
     for ( s <- (2 until S + 1).reverse ) {
       val W = X.last // working set is all in current stage
       val P = collection.mutable.Set[BigInt]()
-      val layerSet = collection.mutable.Set[(BigInt, BigInt, BigInt)]()
+      val layerSet = collection.mutable.Set[(BigInt, BigInt, BigInt, Int)]()
       while ( W.size > 0 ) {
         logger.info( "P = " + P )
         logger.info( "W = " + W )
@@ -444,19 +460,17 @@ object RPAG extends LazyLogging {
         }
         P += numAdded
         val sS = succSet( Set[BigInt]() ++ P, cMax * 2, false, false )
-        val toRemove = W.filter( x => sS.map( _._1 ).contains(x) )
+        val toRemove = W.map( x => sS.find( _._1 == x ) ).filter( _ != None ).map( _.get )
         logger.info( "toRemove = " + toRemove )
-        W --= toRemove
-        // find r = a + b etc ...
-        val depsMap = toRemove.map( r => sS.find( _._1 == r ).get ).toSet[(BigInt, BigInt, BigInt)]
-        layerSet ++= depsMap
+        W --= toRemove.map( _._1 )
+        layerSet ++= toRemove
       }
       X += P
-      adderConst += Set[(BigInt, BigInt, BigInt)]() ++ layerSet
+      adderConst += Set[(BigInt, BigInt, BigInt, Int)]() ++ layerSet
     }
     if ( adderConst.size == 0 ) {
       // all small nums can be computed immediately
-      adderConst += t.map( x => ( x, x, x ) ).toSet[(BigInt, BigInt, BigInt)]
+      adderConst += t.map( x => ( x, x, x, -1 ) ).toSet[(BigInt, BigInt, BigInt, Int)]
     }
     adderConst.toList.reverse
   }

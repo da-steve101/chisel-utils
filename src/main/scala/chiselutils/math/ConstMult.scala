@@ -11,8 +11,10 @@ class ConstMult( genType : Fixed, multVar : List[BigInt] ) extends Module {
   }
 
   /* Preprocessing:
-   * 1) Shift all numbers so that lsb is 1, if zero remove
-   * 2) Remove all duplicates
+   * 1) If zero remove
+   * 2) Make all positive
+   * 3) Shift all numbers so that lsb is 1
+   * 4) Remove duplicates
    */
   val zeroFilt = multVar.zipWithIndex.filter(_._1 != BigInt(0) )
   val negIdxs = zeroFilt.map( x => ( x._1.abs, x._2, x._1 < 0 ) )
@@ -38,12 +40,11 @@ class ConstMult( genType : Fixed, multVar : List[BigInt] ) extends Module {
         if ( woModWidth > woHigh )
           woMod( woHigh, woLo )
         else {
-          // TODO: find a nicer way to do sign extend
-          val sext = Mux( woMod(woModWidth - 1), SInt( -1, woHigh - woModWidth + 1 ), SInt( 0, woHigh - woModWidth + 1 ) )
+          val sext = ( 0 until woHigh - woModWidth + 1).map( x => woMod(woModWidth - 1) ).reduce( _ ## _ )
           sext ## woMod( woModWidth - 1, woLo )
         }
       }
-      val fv = Fixed( width = genType.getWidth(), fracWidth = genType.getFractionalWidth() ).fromBits(woTrim)
+      val fv = genType.cloneType.fromBits(woTrim)
       io.out(d._3) := fv
     }
   }
