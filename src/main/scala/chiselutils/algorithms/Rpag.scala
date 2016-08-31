@@ -379,6 +379,11 @@ object RPAG extends LazyLogging {
       res
     }).toList
 
+    // check small number case
+    if ( adderStructure.size == 1 && adderStructure(0).filter( x => ( x._1 == x._2 && x._2 == x._3 ) ).size == adderStructure(0).size ) {
+      return Vec( t.map( x => currLyr.find( _._2 == x ).get._1 ) )
+    }
+
     for ( as <- adderStructure ) {
       currLyr = implementAdderLayer(
         currLyr.map( _._1 ),
@@ -390,7 +395,7 @@ object RPAG extends LazyLogging {
         }), 
         cMax )
     }
-    Vec( t.map( x => currLyr.find( _._2 == x ).get._1 ).toList )
+    Vec( t.map( x => currLyr.find( _._2 == x ).get._1 ) )
   }
 
   /** Run the RPAG algorithm
@@ -448,6 +453,10 @@ object RPAG extends LazyLogging {
       }
       X += P
       adderConst += Set[(BigInt, BigInt, BigInt)]() ++ layerSet
+    }
+    if ( adderConst.size == 0 ) {
+      // all small nums can be computed immediately
+      adderConst += t.map( x => ( x, x, x ) ).toSet[(BigInt, BigInt, BigInt)]
     }
     adderConst.toList.reverse
   }
