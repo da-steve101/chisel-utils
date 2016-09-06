@@ -8,8 +8,8 @@ import chiselutils.math.ConstMult
 
 class ConstMultSuite extends TestSuite {
   val myRand = new Random
-  val bw = 24
-  val fw = 16
+  val bw = 16
+  val fw = 8
   val inputMax = 1 << 10
   val inputShift = 1 << 9
   val cyc = 15
@@ -32,7 +32,6 @@ class ConstMultSuite extends TestSuite {
     chiselMainTest(Array("--genHarness", "--compile", "--test", "--backend", "c"), () => {
       Module( new ConstMult( bw, fw, numsIn.toList ) ) }) { c => new ConstTester( c ) }
   }
-
 
   @Test def zeroTest {
     val numsIn = List( 2, 0, 5, 22, 13, 0, 7, 53 ).map( BigInt(_) )
@@ -62,9 +61,19 @@ class ConstMultSuite extends TestSuite {
     testNums( numsIn )
   }
 
+  @Test def csdRepresentationTest {
+    val numsGenList = List(List( 443, 321, 211, 253 ), List(-445, -42, -375, -113, 84, -107, -387, -232, 155, -279))
+    for ( numsGen <- numsGenList ) {
+      println( "val numsGen = " + numsGen )
+      val numsIn = numsGen.map( BigInt(_) )
+      testNums( numsIn )
+    }
+  }
+
   @Test def smallNumsTest {
     val numsGen = List(-1, -2, -3, -4, -5)
     val numsIn = numsGen.map( BigInt(_) )
     testNums( numsIn )
   }
+
 }
