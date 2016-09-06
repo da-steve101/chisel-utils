@@ -6,7 +6,7 @@ import scala.collection.mutable.ArrayBuffer
 
 object PmcmILP {
 
-  def solveILP( numsIn : List[BigInt] ) : List[Set[(BigInt, BigInt, BigInt, Int)]] = {
+  def solveILP( numsIn : List[BigInt], solverName : String = "gurobi" ) : List[Set[(BigInt, BigInt, BigInt, Int)]] = {
     val adMin = numsIn.map( n => RPAG.getAdMin( n ) ).max
     println( "adMin = " + adMin )
     // a list of numbers in each stage
@@ -56,7 +56,16 @@ object PmcmILP {
     val heAll = hyperEdges.reverse.toList
     val stagesAll = stages.reverse.toList
 
-    implicit val problem = MIProblem(SolverLib.gurobi)
+    val ilpSolver = {
+      if ( solverName == "lp_solve" )
+        SolverLib.lp_solve
+      else if ( solverName == "oJalgo" )
+        SolverLib.oJalgo
+      else
+        SolverLib.gurobi
+    }
+
+    implicit val problem = MIProblem( ilpSolver )
 
     // convert stages and hyperedges to binary variables
     val edgeVars = heAll.zipWithIndex.map( heStage => {
