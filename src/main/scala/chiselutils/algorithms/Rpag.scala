@@ -16,21 +16,34 @@ object RPAG extends LazyLogging {
   def toCsd( x : BigInt ) : List[(Int, Boolean)] = {
     val csdRep = ArrayBuffer[(Int, Boolean)]()
     var carry = false
-    var carryToOne = false
+    /* From "A Novel Fast Canonical-Signed-Digit Conversion Technique for Multiplication"
+     * and "Optimal left-to-right binary signed-digit recoding"
+     xi+1 xi ci yi ci+1
+        ×  0  0  0    0
+        0  1  0  1    0
+        1  1  0  -1   1
+        0  0  1  1    0
+        1  0  1  -1   1
+        ×  1  1  0    1
+     */
     for ( i <- 0 until ( x.bitLength + 1 ) ) {
       if ( x.testBit(i) ) {
-        if ( !carry )
-          csdRep += ( ( i, true ) )
-        else
-          carryToOne = true
-        carry = true
-      } else {
-        if ( carryToOne ) {
-          csdRep(csdRep.size - 1) = ( (csdRep.last._1, false) )
-          csdRep += ( (i, true) )
+        if ( !carry ) {
+          if ( x.testBit( i + 1 ) ) {
+            csdRep += ( (i, false) )
+            carry = true
+          } else
+            csdRep += ( (i, true) )
         }
-        carryToOne = false
-        carry = false
+      } else {
+        if ( carry ) {
+          if ( x.testBit( i + 1 ) )
+            csdRep += ( (i, false) )
+          else {
+            csdRep += ( (i, true) )
+            carry = false
+          }
+        }
       }
     }
     csdRep.toList
@@ -110,22 +123,23 @@ object RPAG extends LazyLogging {
   }
 
   /** Generate the adder logic */
-  def getAdd( a : SInt, b : SInt, aVal : BigInt, bVal : BigInt, outVal : BigInt, idx : Int ) : SInt = {
+  def getAdd( a : SInt, b : SInt, aVal : BigInt, bVal : BigInt, outVal : BigInt, opIdx : Int ) : SInt = {
     if ( aVal == outVal )
       return a
     if ( bVal == outVal )
       return b
 
-    if( idx < 0 )
-      ChiselError.error( "Invalid operation index" )
-
-    /*
-     val sc = succ( aVal, bVal, cMax, false, false )
-     val validIdxs = sc.filter( x => { x._1 == outVal } ).map( _._2 ).toList
-     if ( validIdxs.size == 0 )
-     NoResultException( "No add could be found as a combination of these numbers" )
-     val idx = validIdxs(0)
-     */
+    val idx = {
+      if( opIdx < 0 ) {
+        val cMax = aVal.max(bVal).max(outVal).toInt*2
+        val sc = succ( aVal, bVal, cMax, false, false )
+        val validIdxs = sc.filter( x => { x._1 == outVal } ).map( _._2 ).toList
+        if ( validIdxs.size == 0 )
+          NoResultException( "No add could be found as a combination of these numbers" )
+        validIdxs(0)
+      } else
+        opIdx
+    }
 
     val isSub = ( ( idx % 2 ) == 1 )
     val kIdx = (( idx - 2)/4) + 1
@@ -177,7 +191,7 @@ object RPAG extends LazyLogging {
     }).reduce( _ ++ _ ).groupBy( _._1 ).map( x => x._2(0) ) // combine and get unique
     sSAll.filter( num => {
       ( !excludeR || !P.contains(num._1) ) && ( !excludeOne || !( BigInt(1) == num._1) ) && ( BigInt(0) != num._1 )
-    }).toSet[(BigInt, BigInt, BigInt, Int)]
+    }).toSet
   }
 
   /** Get the best single number to add to P */
@@ -293,10 +307,10 @@ object RPAG extends LazyLogging {
     */
   def bitCombinations( xCsd : List[(Int, Boolean)], maxAd : Int ) : Set[(List[(Int, Boolean)],List[(Int, Boolean)])] = {
     val xSets = xCsd.toSet[(Int,Boolean)].subsets
-    val bothSets = xSets.map( x => { ( x, xCsd.filter( !x.contains(_) ).toSet[(Int,Boolean)]  )} )
+    val bothSets = xSets.map( x => { ( x, xCsd.filter( !x.contains(_) ).toSet[(Int,Boolean)]  )} ).toSet
     val pairs = bothSets.filter( x => !(x._1.isEmpty || x._2.isEmpty ) ).map( xy => {
       ( xy._1.toList.sortBy(_._1), xy._2.toList.sortBy(_._1) ) })
-    val pairVld = pairs.filter( xy => getAdMin(xy._1) <= maxAd && getAdMin(xy._2) <= maxAd )
+    val pairVld = pairs.filter( xy => { getAdMin(xy._1) <= maxAd && getAdMin(xy._2) <= maxAd } )
     pairVld.map( xy => {
       val abs1 = fundamental(abs(xy._1))
       val abs2 = fundamental(abs(xy._2))
@@ -305,7 +319,7 @@ object RPAG extends LazyLogging {
         ( abs1, abs2 )
       else
         ( abs2, abs1 )
-    }).toSet[(List[(Int, Boolean)],List[(Int, Boolean)])] // Filter out 1's? maybe not just turn pair to single later
+    }) // Filter out 1's? maybe not just turn pair to single later
   }
 
   /** For each number find all CSD representations for potential numbers

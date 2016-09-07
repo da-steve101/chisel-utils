@@ -91,27 +91,6 @@ class RpagSuite extends TestSuite {
       Module( new UserMod( numsIn, 128, 16 ) ) }) { c => new UserModTests( c ) }
   }
 
-  @Test def randomLargeScaleTest {
-    val myRand = new Random
-    val numsGen = List.fill( 10 ) { myRand.nextInt(100) }
-    val numsIn = numsGen.map( BigInt(_) ).map( x => (x >> x.lowestSetBit) ).distinct
-
-    class UserModTests( c : UserMod ) extends Tester( c ) {
-      println( "Using " + numsIn )
-      for ( cyc <- ( 0 until 10 ) ) {
-        val x = myRand.nextInt(100)
-        poke( c.io.xIn, x )
-        step( c.latency )
-        for ( n <- numsIn.zipWithIndex )
-          expect( c.io.vecOut(n._2), x*n._1 )
-      }
-    }
-
-    chiselMainTest(Array("--genHarness", "--compile", "--test", "--backend", "c"), () => {
-      Module( new UserMod( numsIn, 128, 16 ) ) }) { c => new UserModTests( c ) }
-
-  }
-
   @Test def negInputTest {
     val myRand = new Random
     val numsGen = List.fill( 10 ) { myRand.nextInt(100) }

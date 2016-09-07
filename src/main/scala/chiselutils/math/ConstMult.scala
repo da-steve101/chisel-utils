@@ -3,8 +3,9 @@ package chiselutils.math
 
 import Chisel._
 import chiselutils.algorithms.RPAG
+import chiselutils.algorithms.PmcmILP
 
-class ConstMult( bitWidth : Int, fracWidth : Int, multVar : List[BigInt] ) extends Module {
+class ConstMult( bitWidth : Int, fracWidth : Int, multVar : List[BigInt], useIlp : Boolean = true ) extends Module {
   val io = new Bundle {
     val in = Fixed( INPUT, bitWidth, fracWidth )
     val out = Vec( multVar.size, Fixed( OUTPUT, bitWidth, fracWidth ) )
@@ -21,7 +22,12 @@ class ConstMult( bitWidth : Int, fracWidth : Int, multVar : List[BigInt] ) exten
   val shiftIdxs = negIdxs.map( x => { ( x._1 >> x._1.lowestSetBit, x._1.lowestSetBit, x._2 ) })
   val dupIdxs = shiftIdxs.groupBy( _._1 )
   val t = dupIdxs.map( _._1 ).toList
-  val addMapping = RPAG( t )
+  val addMapping = {
+    if ( useIlp )
+      PmcmILP.solveILP( t )
+    else
+      RPAG( t )
+  }
   val xIn = SInt( width = bitWidth ).fromBits( io.in )
   val wOut = RPAG.implementAdder( xIn, addMapping, t )
 
