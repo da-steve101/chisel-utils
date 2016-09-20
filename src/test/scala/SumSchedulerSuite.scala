@@ -34,6 +34,55 @@ class SumSchedulerSuite extends TestSuite {
     outSums
   }
 
+  def setToSum( inputNums : List[List[BigInt]], cpSet : Set[(Int, Int)] ) : BigInt = {
+    cpSet.toList.map( x => inputNums( x._1 )( x._2 ) ).reduce( _ + _ )
+  }
+
+  def testHardware( path : List[List[ (Int, Int, Int, Int, Boolean) ]],
+    muxMap : Map[(Int, Int), List[Boolean]], inputNums : List[(Boolean, List[BigInt])],
+    outputNums : List[List[(BigInt, Boolean)]] ) : Unit = {
+
+    println( "path = " + path )
+    println( "inputNums = " + inputNums )
+    println( "outputNums = " + outputNums )
+
+    val noInPos = inputNums(0)._2.size
+    val noOutPos = outputNums(0).size
+
+    class SumSchedMod extends Module {
+      val io = new Bundle {
+        // val validIn = Bool( INPUT )
+        val dataIn = Vec( noInPos, Fixed( INPUT, 16, 8 ) )
+        val dataOut = Vec( noOutPos, Fixed( OUTPUT, 16, 8 ) )
+      }
+      val sumRes = SumScheduler.implementStructure( path, muxMap, io.dataIn.toList, Bool(true) )
+      io.dataOut := Vec( sumRes )
+    }
+
+    class SumSchedTests( c : SumSchedMod ) extends Tester( c ) {
+      val noCyc = outputNums.size
+      for ( x <- 0 until noCyc ) {
+        if ( x < inputNums.size ) {
+          val thisInput = inputNums(x)
+          // poke( c.io.validIn, thisInput._1 )
+          poke( c.io.dataIn, thisInput._2.toArray )
+        }
+
+        step(1)
+
+        val thisOutput = outputNums(x)
+        for ( oIdx <- 0 until thisOutput.size ) {
+          if ( thisOutput( oIdx )._2  )
+            expect( c.io.dataOut( oIdx ), thisOutput( oIdx )._1 )
+        }
+      }
+    }
+    chiselMainTest( Array("--genHarness", "--compile", "--test",
+      "--backend", "c", "--targetDir", dir.getPath.toString()),
+      () => Module( new SumSchedMod ) ) { c => new SumSchedTests(c) }
+    // launchCppTester( ( m : SumSchedMod ) => new SumSchedTests(m) )
+  }
+
   @Test def adderTreeCPTest {
     // generate adder tree
     for ( depth <- 1 until 12 ) {
@@ -156,7 +205,30 @@ class SumSchedulerSuite extends TestSuite {
     }
   }
 
+  @Test def manualGenerateCpForSumsTest {
+    val sums = List(
+      Set( (0,0), (1, 3), (4, 4), (2, 3 ) ),
+      Set( (0,1), (1, 3), (3, 4), (2, 3 ) ),
+      Set( (0,0), (3, 3), (2, 2), (2, 3 ) )
+    )
+    val genMap = SumScheduler.generateCpForSums( sums, 0 )
+    val manualMap = collection.mutable.Map[ Set[(Int, Int)], Set[Int] ]()
+    manualMap.put( Set((0,0)), Set(0) )
+    manualMap.put( Set((0,1)), Set(0) )
+    manualMap.put( Set((0,2)), Set(2) )
+    manualMap.put( Set((0,3)), Set(1,2,3) )
+    manualMap.put( Set((0,4)), Set(3,4) )
+    manualMap.put( Set((0,3), (0,2)), Set(2) )
+    assert( manualMap.toMap == genMap, "Should generate combinations correctly" )
+  }
 
+  /*
+  @Test def convSumRun {
+    val convSums = getConvSums( 5, 3 )
+    val ilpRes = SumScheduler.layeredCpPathExplore( convSums, 1 )
+    println( ilpRes )
+  }
+   */
   /*
   @Test def testConvPath {
     val convSums = getConvSums( 5, 3 )
@@ -164,6 +236,48 @@ class SumSchedulerSuite extends TestSuite {
     println( convPath )
   }
    */
+  /*
+  @Test def manualSumRun {
+    val sums = List(
+      Set( (0,0), (1, 3), (4, 4), (2, 3 ) ),
+      Set( (0,1), (1, 3), (3, 4), (2, 3 ) ),
+      //      Set( (0,4), (2, 3), (4, 2), (3, 3 ) ),
+      //      Set( (2,5), (3, 3), (3, 5), (4, 3 ) ),
+      Set( (0,0), (3,3), (1, 2), (2, 3 ) )
+    )
+    val ilpRes = SumScheduler.layeredCpPathExplore( sums, 1 )
+    println( "ilpRes = " + ilpRes )
+  }
+   */
+
+  @Test def smallSum {
+    val sums = List(
+      Set( (0,0), (1, 3), (2, 3 ) ),
+      Set( (0,1), (1, 3), (2, 3 ) ),
+      Set( (0,0), (3,3), (1, 2), (2, 3 ) )
+    )
+    val ilpRes = SumScheduler.layeredCpPathExplore( sums, 1 )
+
+    println( "ilpRes = " + ilpRes )
+
+    val myRand = new Random
+    val inputNums = List.fill( 20 ){ (true, List.fill( 4 ){ BigInt(myRand.nextInt(100)) }) }
+    val outputNums = ( 0 until 20 ).map( xIdx => {
+      val shiftedSums = sums.map( s => {
+        val sumSet = s.map( cp => { ( cp._1 + xIdx - 3, cp._2 ) })
+        if ( xIdx % 4 == 0 )
+          ( setToSum( inputNums.map( _._2 ), sumSet ), true )
+        else
+          ( BigInt(0), false )
+      })
+      shiftedSums
+    }).toList
+
+    println( "inputNums = " + inputNums )
+    println( "outputNums = " + outputNums )
+
+    testHardware( ilpRes._1, ilpRes._2, inputNums, outputNums )
+  }
 
   /*
    chiselMainTest(Array("--genHarness", "--compile", "--test", "--backend", "c"), () => {

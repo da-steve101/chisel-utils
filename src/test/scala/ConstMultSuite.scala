@@ -10,8 +10,8 @@ class ConstMultSuite extends TestSuite {
   val myRand = new Random
   val bw = 16
   val fw = 8
-  val inputMax = 1 << 10
-  val inputShift = 1 << 9
+  val inputMax = 1 << 11
+  val inputShift = 1 << 10
   val cyc = 15
 
   def testNums( numsIn : List[BigInt] ) = {
