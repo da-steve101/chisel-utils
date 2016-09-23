@@ -3,6 +3,7 @@ package chiselutils.math
 
 import collection.mutable.ArrayBuffer
 import Chisel._
+import chiselutils.utils.MemShiftRegister
 
 /** A convolutional adder, takes in 1 pixel in each cycle
   * filterSize is the size of filter for image eg) (7, 7, 64)
@@ -69,7 +70,7 @@ class ConvAdder( filterSize : (Int, Int, Int), imgSize : (Int, Int) ) extends Mo
 
   for ( cIdx <- 1 until filterSize._1 ) {
     val inputSelected = rowAdder.last( cIdx )
-    val srIn = colAdder.last.map( ShiftRegister( _, imgSize._2 - 2 ) )
+    val srIn = colAdder.last.map( MemShiftRegister( _, imgSize._2 - 2 ) )
 
     val inputDelayed = {
       if ( cIdx <= filterSize._1 / 2 )
