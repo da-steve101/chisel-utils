@@ -11,25 +11,54 @@ import optimus.algebra.One
 import optimus.algebra.Zero
 import Chisel._
 
+/** Create the path from the bottom using subsets
+  * With Muxes, create varaiables for one cycle. Constrain equal on wrap around
+  * Length is cycles from first input available to when the last is available ( from shortest to longest path )
+  */
+
+/** Format of an operation
+  * ( cyc1, pos1, cyc2, pos2, type, neg ) = ( Int, Int, Int, Int, Int, Boolean )
+  * ( cyc1, pos1 ) is one input
+  * ( cyc2, pos2 ) is second input
+  * type = 0 is mux. if ( cyc1, pos1 ) == ( cyc2, pos2 ) then is equivalent to delay
+  * type < 0 is 0 with a shift of << ( -type ) on input 1
+  * type = 1 is add
+  * type > 1 is do a left shift on input 1 of << (type - 1)
+  * neg is boolean, if to make input 1 of operation negative
+  */
+
+/** Format of input sets
+  * ( cyc, pos, shift, neg ) = ( Int, Int, Int, Boolean )
+  * ( cyc, pos ) is number to add
+  * shift is how much left shift is needed
+  * neg is if is negative
+  * empty set is don't care
+  */
+
 object SumScheduler {
 
-  /** find if sub is a cycle shifted subset of the masterSet
-    * return ( idx of shift, is subset )
+  /** Check if sub is a cycle shifted subset of the masterSet
+    * masterSet is the cp set input
+    * sub is another cp set
+    * return ( idx of shift, if sub is a subset of masterSet )
     */
-  def isSubsetCycShift( masterSet : Set[(Int, Int)], sub : Set[(Int, Int)] ) : (Int, Boolean) = {
+  def isSubsetCycShift( masterSet : Set[(Int, Int, Int, Boolean)],
+    sub : Set[(Int, Int, Int, Boolean)] ) : (Int, Boolean) = {
     val subMin = sub.minBy( _._1 )._1
     // loop through masterSet cycles
     for ( msCyc <- masterSet.map( _._1 - subMin ) ) {
-      if ( sub.map( x => { ( x._1 + msCyc , x._2 ) }).subsetOf(masterSet) )
+      if ( sub.map( x => { ( x._1 + msCyc, x._2, x._3, x._4 ) }).subsetOf(masterSet) )
         return ( msCyc, true )
     }
     return ( -1, false )
   }
 
-  /** cycle shift sums and only keep the unique ones
+  /** Cycle shift sums and only keep the unique ones
+    * sumStructure is all the sums in cp set format
+    * returns all unique sums cycle shifted to start at 0
     */
-  def filterUniqueSums( sumStructure : List[Set[(Int, Int)]] ) : List[Set[(Int, Int)]] = {
-    val uniqueSums = ArrayBuffer[Set[(Int, Int)]]()
+  def filterUniqueSums( sumStructure : List[Set[(Int, Int, Int, Boolean)]] ) : List[Set[(Int, Int, Int, Boolean)]] = {
+    val uniqueSums = ArrayBuffer[Set[(Int, Int, Int, Boolean)]]()
     uniqueSums += sumStructure(0)
     for ( sumSet <- sumStructure ) {
       val isSubset = uniqueSums.map( uS => {
@@ -41,68 +70,166 @@ object SumScheduler {
     uniqueSums.toList
   }
 
-  /** check if op is a mux */
-  def isMux( thisOp : (Int, Int, Int, Int, Boolean) ) = {
-    !thisOp._5 && ( thisOp._1, thisOp._2 ) != ( thisOp._3, thisOp._4 )
+  /** Check if op is a mux */
+  def isMux( thisOp : (Int, Int, Int, Int, Int, Boolean) ) = {
+    ( thisOp._5 <= 0 ) && ( thisOp._1, thisOp._2 ) != ( thisOp._3, thisOp._4 )
   }
 
-  /** check if op is an add */
-  def isAdd( thisOp : (Int, Int, Int, Int, Boolean) ) = {
-    thisOp._5
+  /** Check if op is an add */
+  def isAdd( thisOp : (Int, Int, Int, Int, Int, Boolean) ) = {
+    ( thisOp._5 >= 1 )
   }
 
-  /** check if op is a delay */
-  def isDelay( thisOp : (Int, Int, Int, Int, Boolean) ) = {
-    !thisOp._5 && ( thisOp._1, thisOp._2 ) == ( thisOp._3, thisOp._4 )
+  /** Check if op is a delay */
+  def isDelay( thisOp : (Int, Int, Int, Int, Int, Boolean) ) = {
+    ( thisOp._5 <= 0 ) && ( thisOp._1, thisOp._2 ) == ( thisOp._3, thisOp._4 )
   }
 
-  /** delay the cp stage using stage idxs */
-  def cpStageDelay( currStage : Int, stageFrom : Int, cp : Set[(Int, Int)] ) : Set[(Int, Int)] = {
-    cp.map( c => { ( c._1 + currStage - stageFrom, c._2 ) } )
+  /** Delay the cp stage using stage idxs
+    * currStage is ...
+    */
+  def cpStageDelay( currStage : Int, stageFrom : Int, cp : Set[(Int, Int, Int, Boolean)] ) : Set[(Int, Int, Int, Boolean)] = {
+    cp.map( c => { ( c._1 + currStage - stageFrom, c._2, c._3, c._4 ) } )
   }
 
-  /** Get the min number of cycles needed to realize the set of CP */
-  def cpToCycRequired( cp : Set[(Int, Int)] ) : Int = {
+  /** Calculate the number of outputs after adding noIn numbers over noCycles
+    */
+  def getAddOuts( noIn : Int, noCycles : Int ) : Int = {
+    var currIn = noIn
+    for ( i <- 0 until noCycles ) {
+      val oddBit = currIn & 1
+      currIn = ( currIn >> 1 ) + oddBit
+    }
+    currIn
+  }
+
+  /** Calculate the amount of resources in an add after noCycles
+    * return ( resources, noOut )
+    */
+  def getAddResource( noIn : Int, noCycles : Int ) : ( Int, Int ) = {
+    var currResource = 0
+    var currIn = 0
+    for ( i <- 0 until noCycles ) {
+      val oddBit = currIn & 1
+      currIn = ( currIn >> 1 ) + oddBit
+      currResource += currIn
+    }
+    ( currResource, currIn )
+  }
+
+  /** Calculate the resources used for an input pattern
+    * returns ( noResource, noCycle )
+    */
+  def cumulativeResource( noIns : List[(Int, Int)] ) : ( Int, Int ) = {
+    val addZones = ( noIns.drop(1) zip noIns.dropRight(1) )
+    var currResource = 0
+    var currOut = 0
+    var currCyc = 0
+    for ( aIdx <- 0 until addZones.size ) {
+      val az = addZones( aIdx )
+      val noIn = currOut + az._1._1
+      val noCyc = az._2._2 - az._1._2
+      val ar = getAddResource( noIn, noCyc )
+      currCyc += noCyc
+      currResource += ar._1
+      currOut = ar._2
+    }
+
+    // last iteration
+    val az = noIns.last
+    val noIn = currOut + az._1
+    val noCyc = log2Ceil( noIn )
+    val ar = getAddResource( noIn, noCyc )
+
+    ( currResource + ar._1, currCyc + noCyc )
+  }
+
+  /** Get the min number of cycles needed to realize the set of CP
+    * Is an exact calculation for a sum
+    */
+  def cpToCycRequired( cp : Set[(Int, Int, Int, Boolean)], subMin : Boolean = true ) : Int = {
     val cpCycMap = cp.groupBy( _._1 )
     val cpCycKeys = cpCycMap.keys.toList.sortBy( x => x )
     val cpMin = cp.minBy( _._1 )._1
+
     // extra cycles needed for adder tree if multiple on same cycle
     val cpCycs = cpCycMap.map( x => ( x._1, x._2.size ) )
+
     // calculate cumulative max cycle
     var currCyc = 0
     var cpCycMax = 0
     for( kIdx <- 0 until cpCycKeys.size ) {
       val key = cpCycKeys(kIdx)
-      currCyc = {
-        if ( kIdx == 0 )
-          0
-        else {
-          val keyDiff = key - cpCycKeys(kIdx - 1)
-          val rCyc = {
-            if ( currCyc < 1 )
-              0
-            else
-              log2Ceil( currCyc ) - keyDiff
-          }
-          val remainingAdd = { // add from prev cycles
-            if ( rCyc > 0 )
-              1 << rCyc
-            else
-              1
-          }
-          cpCycs( key ) + remainingAdd
-        }
-      }
-      val thisKeyCyc = key + {
-        if ( currCyc <= 1 )
-          0
+      val noIn = currCyc + cpCycs( key )
+      val noCyc = {
+        if ( kIdx != cpCycKeys.size - 1)
+          cpCycKeys( kIdx + 1 ) - key
         else
-          log2Ceil( currCyc ) - 1
+          log2Ceil( noIn )
       }
-      if ( thisKeyCyc > cpCycMax )
-        cpCycMax = thisKeyCyc
+      currCyc = getAddOuts( noIn, noCyc )
+      cpCycMax = key + noCyc
     }
-    cpCycMax - cpMin
+    cpCycMax - { if ( subMin ) cpMin else 0 }
+  }
+
+  /** Calculate the max unshared resources this sum needs
+    * This can be used to provide a bound beyond which do not generate paths
+    */
+  def cpToMaxResource( cp : Set[(Int, Int, Int, Boolean)], numStages : Int ) : Int = {
+    val cpCycMap = cp.groupBy( _._1 )
+    val cpCycs = cpCycMap.map( x => ( x._1, x._2.size ) )
+
+    val cr = cumulativeResource( cpCycs )
+    val idleCycles = {
+      if ( numStages > cr._2 )
+        numStages - cr._2
+      else
+        0
+    }
+    cr._1 + idleCycles
+  }
+
+  /** Get the min number of cycles needed to realize the sum outputs of CP
+    * cp is a list of all sums to output in order
+    * if don't care, then Set is empty
+    */
+  def cpOutToCycRequired( cp : List[Set[(Int, Int, Int, Boolean)]] ) : Int = {
+    // convert cp to convoys
+    val convoys = cp.zipWithIndex.map( x => {
+      val c = x._1
+      val i = x._2
+      ( c._1 - i, c._2, c._3, c._4 )
+    })
+    val minAddCycles = filterUniqueSums( convoys ).map( c => cpToCycRequired( c, false ) )
+    // subtract the output index to get dispersion times
+    val finishPos = minAddCycle.groupBy( _ ).map( x => { ( x._1, x._2.size ) } )
+    val res = cumulativeResource( finishPos.toList )
+    res._2
+  }
+
+  def getCombinations( sub : List[List[Set[(Int, Int, Int, Boolean)]]] ) : List[List[Set[(Int, Int, Int, Boolean)]]] = {
+    val noComb = sub.map( s => s.size ).reduce( _ * _ ) // TODO: check doesn't overflow ... if it does then have bigger problems
+    val allComb = ( 0 until noComb ).map( idx => {
+      val subLists = ( 0 until sub.size ).map( lIdx => {
+        val div = sub.drop( lIdx + 1 ).map( s => s.size ).reduce( _ * _ )
+        val mod = sub( lIdx ).size
+        val kIdx = (idx / div) % mod
+        sub( lIdx )( kIdx )
+      }).map( comb => {
+        // for each combination generate all shifts
+        val minShift = comb.map( x => x.minBy( _._3 )._3 ).min
+        ( 0 until minShift + 1 ).map( shift => {
+          comb.map( x => x.map( y => { ( y._1, y._2, y._3 - shift, y._4 ) } ) )
+        })
+      }).reduce( _ ++ _ ).map( comb => {
+        // generate the neg of all these
+        List( true, false ).map( neg => {
+          comb.map( x => x.map( y => { ( y._1, y._2, y._3 - shift, { if ( neg ) !y._4 else y._4 } )} ) )
+        })
+      }).reduce( _ ++ _ )
+    })
+    allComb
   }
 
   /** query currentCps to get cp set */
