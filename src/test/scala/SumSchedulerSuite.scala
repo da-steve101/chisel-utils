@@ -5,8 +5,12 @@ import scala.util.Random
 import scala.collection.mutable.ArrayBuffer
 import Chisel._
 import chiselutils.math.SumScheduler
+import chiselutils.math.Road
+import chiselutils.math.Person
 
 class SumSchedulerSuite extends TestSuite {
+
+  val randNoMax = 1 << 8
 
   def getConvSums( imgSize : Int, filterSize : Int ) : List[Set[(Int, Int)]] = {
     // no padding, 1 filter
@@ -16,8 +20,8 @@ class SumSchedulerSuite extends TestSuite {
     // input is 3 by 3 => positions 0 to 8
     // columns are x, rows are y
     val positions = ( 0 until filterSize*filterSize )
-    val outSums = ( 0 until imgSize ).map( x => {
-      ( 0 until imgSize ).map( y => {
+    val outSums = ( 0 until imgSize ).map( y => {
+      ( 0 until imgSize ).map( x => {
         positions.map( p => {
           val px = ( p % filterSize ) - ( filterSize / 2 )
           val py = ( p / filterSize ) - ( filterSize / 2 )
@@ -34,15 +38,29 @@ class SumSchedulerSuite extends TestSuite {
     outSums
   }
 
+  def generateInOut( cities : List[List[Set[Person]]] ) : (List[(Boolean, List[BigInt])], List[List[(BigInt, Boolean)]] ) = {
+    val myRand = new Random
+    val noInputs = cities.map( city => city.map( convoy => convoy.maxBy( _.beachId ).beachId ).max ).max + 1
+    val noCyc = 2*cities.head.size
+    val inputs = List.fill( noCyc ) { ( true, List.fill( noInputs ){ BigInt(myRand.nextInt(randNoMax)) } ) }
+    println( inputs )
+    // todo: do a better calc of latency ( ensure everything can be computed in time )
+    val latency = cities.map( city => city.head.maxBy( _.roadTripTime ).roadTripTime ).max
+    val outputCities = cities.map( city => city.zipWithIndex.map( convoy => {
+      convoy._1.map( p => { inputs( latency + convoy._2 - p.roadTripTime )._2( p.beachId ) }).reduce( _ + _ )
+    }).map( x => ( x, true ) ) )
+    val outputs = ( 0 until outputCities.head.size ).map( idx => outputCities.map( _(idx) ) ).toList
+    ( inputs, List.fill( latency - 1 ){ List.fill( cities.size ) { ( BigInt(0), false ) } } ++ outputs )
+  }
+
   def setToSum( inputNums : List[List[BigInt]], cpSet : Set[(Int, Int)] ) : BigInt = {
     cpSet.toList.map( x => inputNums( x._1 )( x._2 ) ).reduce( _ + _ )
   }
 
-  def testHardware( path : List[List[ (Int, Int, Int, Int, Boolean) ]],
-    muxMap : Map[(Int, Int), List[Boolean]], inputNums : List[(Boolean, List[BigInt])],
+  def testHardware( cities : List[Road], inputNums : List[(Boolean, List[BigInt])],
     outputNums : List[List[(BigInt, Boolean)]] ) : Unit = {
 
-    println( "path = " + path )
+    println( "cities = " + cities )
     println( "inputNums = " + inputNums )
     println( "outputNums = " + outputNums )
 
@@ -55,7 +73,9 @@ class SumSchedulerSuite extends TestSuite {
         val dataIn = Vec( noInPos, Fixed( INPUT, 16, 8 ) )
         val dataOut = Vec( noOutPos, Fixed( OUTPUT, 16, 8 ) )
       }
-      val sumRes = SumScheduler.implementStructure( path, muxMap, io.dataIn.toList, Bool(true) )
+      val sumRes = SumScheduler.implementStructure( cities, io.dataIn.toList, Bool(true) )
+      for ( rd <- cities )
+        rd.printfCond( this )
       io.dataOut := Vec( sumRes )
     }
 
@@ -74,6 +94,8 @@ class SumSchedulerSuite extends TestSuite {
         for ( oIdx <- 0 until thisOutput.size ) {
           if ( thisOutput( oIdx )._2  )
             expect( c.io.dataOut( oIdx ), thisOutput( oIdx )._1 )
+          else
+            peek( c.io.dataOut( oIdx ) )
         }
       }
     }
@@ -83,111 +105,7 @@ class SumSchedulerSuite extends TestSuite {
     // launchCppTester( ( m : SumSchedMod ) => new SumSchedTests(m) )
   }
 
-  @Test def adderTreeCPTest {
-    // generate adder tree
-    for ( depth <- 1 until 12 ) {
-      val adderTreePath = ( 0 until depth ).map( lyrIdx => {
-        ( 0 until (1 << ( depth - lyrIdx - 1 ) )).map( addIdx => {
-          ( lyrIdx, addIdx*2, lyrIdx, addIdx*2 + 1, true )
-        }).toList
-      }).toList
-      val cpCoords = SumScheduler.pathToCP( adderTreePath, 0 )
-      assert( 1 == cpCoords.size, "Adder tree should only have one possible set of CP coords" )
-      val cpSet = cpCoords(0)
-      assert( (1 << depth) == cpSet.size, "cpSet should have all positions" )
-      for ( posIdx <- ( 0 until ( 1 << depth )) )
-        assert( cpSet.contains( ( 0, posIdx ) ), "cpSet should contain all positions with cycle 0" )
-    }
-  }
-
-  @Test def muxTreeCPTest {
-    // generate adder tree
-    for ( depth <- 1 until 12 ) {
-      val muxTreePath = ( 0 until depth ).map( lyrIdx => {
-        ( 0 until (1 << ( depth - lyrIdx - 1 ) )).map( addIdx => {
-          ( lyrIdx, addIdx*2, lyrIdx, addIdx*2 + 1, false )
-        }).toList
-      }).toList
-      val cpCoords = SumScheduler.pathToCP( muxTreePath, 0 )
-      assert( ( 1 << depth ) == cpCoords.size, "Mux tree should have all possible inputs" )
-      val cpCoordsUnSet = cpCoords.reduce( _ ++ _ ).toList.sortBy( _._2 )
-      for ( cpSet <- cpCoords.zipWithIndex ) {
-        assert( 1 == cpSet._1.size, "cpSet should have a single input" )
-        assert( cpCoordsUnSet(cpSet._2) == ( 0, cpSet._2 ), "cpSet should contain correct inputs" )
-      }
-    }
-  }
-
-  @Test def delayCPTest {
-    // generate adder tree
-    for ( depth <- 1 until 12 ) {
-      val delayPath = ( 0 until depth ).map( lyrIdx => {
-        ( 0 until (1 << depth)).map( addIdx => {
-          ( lyrIdx, addIdx, lyrIdx, addIdx, false )
-        }).toList
-      }).toList
-      for ( i <- ( 0 until ( 1 << depth ) ) ) {
-        val cpCoords = SumScheduler.pathToCP( delayPath, i )
-        assert( 1 == cpCoords.size, "Delay path should only have one possible set of input" )
-        val cpSet = cpCoords(0)
-        assert( 1 == cpSet.size, "cpSet should have a single input" )
-        assert( cpSet.contains( ( 0, i ) ), "cpSet should contain correct inputs" )
-      }
-    }
-  }
-
-  @Test def linearAddCPTest {
-    for ( depth <- 1 until 12 ) {
-      val adderPath = ( 0 until depth ).map( lyrIdx => {
-        List( ( lyrIdx, 0, 0, lyrIdx + 1, true ) )
-      }).toList
-      val cpCoords = SumScheduler.pathToCP( adderPath, 0 )
-      assert( 1 == cpCoords.size, "Adder tree should only have one possible set of CP coords" )
-      val cpSet = cpCoords(0)
-      assert( depth + 1 == cpSet.size, "cpSet should have all positions" )
-      assert( cpSet.contains( ( 0, 0) ), "cpSet should contain all positions" )
-      for ( posIdx <- ( 0 until depth ) )
-        assert( cpSet.contains( ( posIdx, posIdx + 1 ) ), "cpSet should contain all positions" )
-    }
-  }
-
-  @Test def adderTreeAndLinearCPTest {
-    for ( treeNums <- 2 until 10 ) {
-      // one layer stage of adder tree
-      val initalAdderTree = ( 0 until treeNums ).map( i => {
-        ( 0, 2*i, 0, 2*i + 1, true )
-      }).toList
-      // delay first
-      val add0Delay = List( ( 1, 0, 1, 0, false ) )
-      // then linear sum
-      val adderPath = ( 1 until treeNums ).map( lyrIdx => {
-        List( ( lyrIdx + 1, 0, 1, lyrIdx, true ) )
-      }).toList
-      val cpCoords = SumScheduler.pathToCP( List( initalAdderTree ) ++ List( add0Delay) ++ adderPath, 0 )
-      assert( 1 == cpCoords.size, "Adders should only have one possible set of CP coords" )
-      val cpSet = cpCoords(0)
-      assert( treeNums*2 == cpSet.size, "cpSet should have all positions" )
-      for ( posIdx <- ( 0 until treeNums ) )
-        assert( cpSet.contains( ( posIdx, 2*posIdx ) ) && cpSet.contains( ( posIdx, 2*posIdx + 1) ), "cpSet should contain all positions" )
-    }
-  }
-
-  @Test def partitionAtCycleTest {
-    val convSums = getConvSums( 5, 3 )
-    val uniqueSums = SumScheduler.filterUniqueSums( convSums )
-    val cycReq = convSums.map( cs => SumScheduler.cpToCycRequired( cs ) ).max + 1 // add 1 as need to mux last
-    println( "cycReq = " + cycReq )
-    var partitions = List[Set[(Int, Int)]]()
-    for ( cyc <- 0 until cycReq )
-      partitions = SumScheduler.partitionAtCycle( uniqueSums, cyc )
-    for ( cs <- convSums ) {
-      val csTest = partitions.map( p => SumScheduler.isSubsetCycShift( p, cs )._2 ).reduce( _ || _ )
-      if ( !csTest )
-        println( "cs = " + cs + " not found in " + partitions.filter( p => p.size == cs.size ) )
-      assert( csTest, "All sums must have aleast one path available" )
-    }
-  }
-
+/*
   @Test def generateCpForSumsTest {
     val convSums = getConvSums( 5, 3 )
     val cycReq = convSums.map( cs => SumScheduler.cpToCycRequired( cs ) ).max + 1 // add 1 as need to mux last
@@ -222,21 +140,38 @@ class SumSchedulerSuite extends TestSuite {
     assert( manualMap.toMap == genMap, "Should generate combinations correctly" )
   }
 
-  /*
+ */
   @Test def convSumRun {
-    val convSums = getConvSums( 5, 3 )
-    val ilpRes = SumScheduler.layeredCpPathExplore( convSums, 1 )
-    println( ilpRes )
+    val convSums = getConvSums( 5, 3 ).map( s => s.map( p => ( p._1, p._2, 0, false ) ) )
+    println( convSums )
+    val city = SumScheduler.cpToCity( convSums, ( 0 until convSums.size ).map( _ + 10 ).toList )
+    val cities = List( city )
+    val cityRoads = SumScheduler.buildRoads( cities )
+    val inOut = generateInOut( cities )
+    testHardware( cityRoads, inOut._1, inOut._2 )
   }
-   */
-  /*
+
+  @Test def customFollow {
+    val city = List(
+      Set( Person( 5, 0, 0, false ), Person( 4, 1, 0, false ) ),
+      Set( Person( 5, 0, 0, false ), Person( 4, 1, 0, false ), Person( 3, 2, 0, false ) ),
+      Set( Person( 4, 1, 0, false ), Person( 3, 2, 0, false ) )
+    )
+    val cities = List(city)
+    val testCity = List(Set(Person( 2, 1, 0, false )), Set[Person](), Set(Person( 3, 0, 0, false ), Person( 2, 1, 0, false )))
+    println( SumScheduler.cityMinRoad( testCity ) )
+    val cityRoads = SumScheduler.buildRoads( cities )
+    val inOut = generateInOut( cities )
+    testHardware( cityRoads, inOut._1, inOut._2 )
+  }
+/*
+
   @Test def testConvPath {
     val convSums = getConvSums( 5, 3 )
     val convPath = SumScheduler.cpToPath( convSums, 1 )
     println( convPath )
   }
-   */
-  /*
+
   @Test def manualSumRun {
     val sums = List(
       Set( (0,0), (1, 3), (4, 4), (2, 3 ) ),
@@ -248,17 +183,18 @@ class SumSchedulerSuite extends TestSuite {
     val ilpRes = SumScheduler.layeredCpPathExplore( sums, 1 )
     println( "ilpRes = " + ilpRes )
   }
-   */
 
   @Test def smallSum {
     val sums = List(
-      Set( (0,0), (1, 3), (2, 3 ) ),
-      Set( (0,1), (1, 3), (2, 3 ) ),
+      Set( (0,0), (1, 3), (2, 3) ),
+      Set( (1,1), (2, 3), (3, 3) ),
       Set( (0,0), (3,3), (1, 2), (2, 3 ) )
     )
-    val ilpRes = SumScheduler.layeredCpPathExplore( sums, 1 )
+    val city = SumScheduler.cpToCity( sums.map( s => s.map( x => ( x._1, x._2, 0, false ) )), List( 3, 4, 5 ) )
 
-    println( "ilpRes = " + ilpRes )
+    println( "city = " + city )
+
+    val cities = SumScheduler.buildRoads( List( city ) )
 
     val myRand = new Random
     val inputNums = List.fill( 20 ){ (true, List.fill( 4 ){ BigInt(myRand.nextInt(100)) }) }
@@ -276,8 +212,9 @@ class SumSchedulerSuite extends TestSuite {
     println( "inputNums = " + inputNums )
     println( "outputNums = " + outputNums )
 
-    testHardware( ilpRes._1, ilpRes._2, inputNums, outputNums )
+    testHardware( cities, inputNums, outputNums )
   }
+*/
 
   /*
    chiselMainTest(Array("--genHarness", "--compile", "--test", "--backend", "c"), () => {
