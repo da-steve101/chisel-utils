@@ -5,7 +5,7 @@ import Chisel._
 
 /** A Road in the city beaches problem
   */
-class Road( noConvoy : Int ) {
+class Road( noConvoy : Int, val latency : Int ) {
 
   // the convoy that goes into the road
   // the convoy can change following merges
@@ -169,9 +169,13 @@ class Road( noConvoy : Int ) {
     } else if ( isDelay() )
       thisOp = Some(RegNext( lRoad.get.implementRoad( beaches, validIn ) ))
     else if ( isMux() ) {
+      val latShift = latency % muxSwitch.size
+      val muxRotated = muxSwitch.takeRight( latShift ) ++ muxSwitch.dropRight( latShift )
       println( "Mux switch for Road@" + hashCode + " = " + muxSwitch )
+      // println( "Convoy for Road@" + hashCode + " = " + convoyLayout )
+      println( "Mux rotated with " + latShift + " for Road@" + hashCode + " = " + muxRotated )
       val ctr = Counter( validIn, noConvoy )
-      val switchVec = Vec( muxSwitch.map( Bool(_) ) )
+      val switchVec = Vec( muxRotated.map( Bool(_) ) )
       cond = Some(switchVec( ctr._1 ))
       thisOp = Some(RegNext( Mux( cond.get, rRoad.get.implementRoad( beaches, validIn ), lRoad.get.implementRoad( beaches, validIn ) )))
     } else // Add
@@ -198,4 +202,40 @@ class Road( noConvoy : Int ) {
       if ( rRoad.isDefined ) rRoad.get else "" }
   }
 
+  def toDot( shorten : Boolean = false) : String = {
+    val nodeProp = {
+      if ( isMux() )
+        "[shape=box]"
+      else if ( isAdd() )
+        "[shape=circle]"
+      else if ( isDelay() )
+        "[shape=ellipse]"
+      else
+        "[shape=plaintext, label=" + beachId + "]"
+    }
+    val thisNode = "Road" + hashCode + " " + nodeProp + ";\n"
+    var currRd = this
+    var prevRd = currRd
+    var count = 0
+    while( currRd.isDelay() && shorten ) {
+      count += 1
+      prevRd = currRd
+      currRd = currRd.getLeft().get
+    }
+    if ( isDelay() && shorten ) {
+      "Road" + hashCode + " " + " [label=Delay_" + count +"_Road" + hashCode + "];\n"
+    } else {
+      "Road" + hashCode + " " + nodeProp + ";\n"
+    } + {
+        if ( prevRd.getLeft().isDefined )
+          "Road" + hashCode + " -> " + "Road" + prevRd.getLeft().get.hashCode + " [color=green];\n" + prevRd.getLeft().get.toDot()
+        else
+          ""
+      } + {
+        if ( prevRd.getRight().isDefined )
+          "Road" + hashCode + " -> " + "Road" + prevRd.getRight().get.hashCode + " [color=red];\n" + prevRd.getRight().get.toDot()
+        else
+        ""
+      }
+  }
 }

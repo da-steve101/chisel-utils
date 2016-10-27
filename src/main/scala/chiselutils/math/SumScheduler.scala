@@ -2,7 +2,7 @@
 package chiselutils.math
 
 import scala.collection.mutable.ArrayBuffer
-import scala.collection.mutable.HashSet
+import collection.immutable.HashSet
 import optimus.optimization._
 import optimus.optimization.MPIntVar
 import optimus.algebra.Expression
@@ -10,6 +10,7 @@ import optimus.algebra.Constraint
 import optimus.algebra.One
 import optimus.algebra.Zero
 import Chisel._
+import util.Random
 
 /** Algorithm:
   * Until all citys are complete, select a random city
@@ -51,6 +52,8 @@ import Chisel._
   * City = List[Convoy]
   */
 
+case class NoSolution( msg : String ) extends Exception
+
 object SumScheduler {
 
   /** Check if one convoy is a time shifted subset of another masterSet
@@ -73,7 +76,7 @@ object SumScheduler {
     * Note: Cannot cycle shift as output is locked and changing it would result in incorrect results
     */
   def getUniqueConvoys( city : List[Set[Person]] ) : List[Set[Person]] = {
-    val uniqueConvoys = HashSet[Set[Person]]()
+    val uniqueConvoys = collection.mutable.HashSet[Set[Person]]()
     for ( convoy <- city )
       uniqueConvoys += convoy
     uniqueConvoys.toList.filterNot( _.isEmpty )
@@ -94,37 +97,165 @@ object SumScheduler {
    * Consider 3 ( or more ) next to each other
    */
 
+  def corrDistance( a : Person, b : Person,
+    convoys : List[HashSet[Person]] ) : Double = {
+    val aList = convoys.map( c => c.contains( a ) )
+    val bList = convoys.map( c => c.contains( b ) )
+    // compare the two, jaccard coeff
+    val noTrue = ( aList zip bList ).count( x => x._1 && x._2 )
+    // val noDiff = ( aList zip bList ).count( x => x._1 != x._2 )
+    val total = convoys.size
+    // math.max( noTrue, noDiff ).toDouble / total
+    noTrue.toDouble / total
+  }
+
+  /** Call recursively until a solution that meets min path is found
+    */
+  def clusterDFS( leftSide : HashSet[Person], rightSide : HashSet[Person],
+    loopList : List[Person], convoyHash : List[HashSet[Person]] ) : (
+    HashSet[Person], HashSet[Person], Boolean ) = {
+
+    val convoySplits = convoyHash.map( c => {
+      ( leftSide.filter( c.contains( _ ) ).toSet,
+        rightSide.filter( c.contains( _ ) ).toSet )
+    })
+    val lMin = cityMinRoad( convoySplits.map( _._1 ) )
+    val rMin = cityMinRoad( convoySplits.map( _._2 ) )
+    if ( math.min( lMin, rMin ) < 1 )
+      return ( HashSet[Person](), HashSet[Person](), false )
+
+    if ( loopList.size == 0 ) {
+      val splitInvalid = (convoyHash zip convoySplits).map( x =>
+        !x._1.isEmpty && ( x._2._1.isEmpty || x._2._2.isEmpty )
+      ).reduce( _ || _ )
+      if ( splitInvalid )
+        return ( HashSet[Person](), HashSet[Person](), false )
+      return ( leftSide, rightSide, true )
+    }
+
+    val p = loopList.head
+    val selConvoys = convoyHash.filter( c => c.contains( p ) )
+    val lDist = leftSide.map( l => corrDistance( l, p, selConvoys ) )
+    val rDist = rightSide.map( r => corrDistance( r, p, selConvoys ) )
+    val leftFirst = ( lDist.sum / lDist.size > rDist.sum / rDist.size )
+    val res = clusterDFS( leftSide ++ { if ( leftFirst ) HashSet(p) else HashSet[Person]() },
+      rightSide ++ { if ( !leftFirst ) HashSet(p) else HashSet[Person]() },
+      loopList.drop(1), convoyHash )
+    if ( res._3 )
+      return res
+    clusterDFS( leftSide ++ { if ( !leftFirst ) HashSet(p) else HashSet[Person]() },
+      rightSide ++ { if ( leftFirst ) HashSet(p) else HashSet[Person]() },
+      loopList.drop(1), convoyHash )
+  }
+
+  /** Also cluster on the add??
+    * Partitioning for greatest amount of uniformity on both sides
+    * Also need to consider timings :/
+    * Take entire set of all possible ppl
+    * Partition ppl on each side
+    * Cannot put all of a sum on one side
+    * Therefore group ppl by how soon needed?
+    * Need to balance with how many can be on one side?
+    * Could have alot of non overlapping
+    * Find the split of ppl that has the minimum number of different?
+    * If more than original number perhaps use mux?
+    * represent as matrix of possible ppl and convoys,
+    * rearrange cols so that can split at col and have both with fewest unique rows in each
+    */
+  def clusterAddSplit( convoys : List[Set[Person]] ) : (HashSet[Person], HashSet[Person]) = {
+    val myRand = new Random
+    val pplSet = convoys.reduce( _ ++ _ ).toList.sortBy( _.roadTripTime )
+    val convoyHash = convoys.map( HashSet[Person]() ++ _ )
+    val left = pplSet.head
+    val right = pplSet.drop( 1 ).map( p => ( p, corrDistance( left, p, convoyHash ) ) ).minBy( _._2 )._1
+    val leftSide = HashSet( left )
+    val rightSide = HashSet( right )
+    val loopSet = pplSet.filter( p => p != left && p != right )
+    // do dfs to find something that has a feasable path
+    val res = clusterDFS( leftSide, rightSide, loopSet, convoyHash )
+    if ( !res._3 ) {
+      println( "Add Split not possible for " + convoys )
+      throw new NoSolution( "Cannot generate add split" )
+    }
+    println( "clusterSplit L = " + res._1 + ", clusterSplit R = " + res._2 )
+    ( res._1, res._2 )
+  }
+
   /** Check if the convoys have a common subsection
     * Generate a split left and right
     * If put all on one side will ignore an default to mux
     */
   def generateAddSplit( convoys : List[Set[Person]] ) : (
-    List[Set[Person]], List[Set[Person]] ) = {
-    val commonSection = getCommonSection( convoys )
-    println( "commonSection = " + commonSection )
-    // inspect the common section. Filter out anything not in the 1 cycle reach chain
-    val cycles = commonSection.map( _.roadTripTime ).toList.sortBy( x => x )
-    println( "cycles = " + cycles )
-    if ( cycles.size == 0 )
-      return ( List.fill( convoys.size ) { Set[Person]() }, convoys )
-    val cycStart = cycles(0)
-    var cycStop = cycStart
-    for ( i <- 0 until cycles.size ) {
-      if ( cycles(i) <= cycStop + 1 )
-        cycStop = cycles(i)
+    HashSet[Person], HashSet[Person] ) = {
+    val uniqueConvoys = getUniqueConvoys( convoys )
+
+    // TODO: try other splitting methods
+
+    clusterAddSplit( uniqueConvoys )
+  }
+
+  def clusterDistance( b : HashSet[Person], cluster : List[HashSet[Person]] ) : Float = {
+    cluster.map( c => c.diff(b).size + b.diff(c).size ).reduce( _ + _ )/cluster.size.toFloat
+  }
+
+  /** Look at trying to assign a set to a cluster for mux
+    */
+  def assignLeft( b : HashSet[Person], clusterL : List[HashSet[Person]],
+    clusterR : List[HashSet[Person]] ) : Boolean = {
+    val dL = clusterDistance( b, clusterL )
+    val dR = clusterDistance( b, clusterR )
+    dL < dR
+  }
+
+  def clusterMuxDFS( clusterL : List[HashSet[Person]],
+    clusterR : List[HashSet[Person]],
+    unassigned : List[HashSet[Person]] ) : (List[Boolean], Boolean) = {
+
+    val lMin = cityMinRoad( clusterL )
+    val rMin = cityMinRoad( clusterR )
+    if ( math.min( lMin, rMin ) < 1 )
+      return ( List[Boolean](), false )
+    if ( unassigned.size == 0 )
+      return ( List[Boolean](), true )
+
+    val newConvoy = unassigned.head
+    val leftFirst = assignLeft( newConvoy, clusterL, clusterR )
+    val res = clusterMuxDFS( clusterL ++ {
+      if ( leftFirst ) List( newConvoy ) else List[HashSet[Person]]()
+    }, clusterR ++ {
+      if ( !leftFirst ) List( newConvoy ) else List[HashSet[Person]]()
+    }, unassigned.drop(1) )
+    if ( res._2 )
+      return ( List( !leftFirst ) ++ res._1, res._2 )
+    val resR = clusterMuxDFS( clusterL ++ {
+      if ( !leftFirst ) List( newConvoy ) else List[HashSet[Person]]()
+    }, clusterR ++ {
+      if ( leftFirst ) List( newConvoy ) else List[HashSet[Person]]()
+    }, unassigned.drop(1) )
+    ( List( leftFirst ) ++ resR._1, resR._2 )
+  }
+
+  /**
+    */
+  def clusterSplit( convoys : List[Set[Person]] ) : List[Boolean] = {
+    val myRand = new Random
+    val convoysHash = convoys.map( HashSet[Person]() ++ _ )
+    for ( lIdx <- Random.shuffle( ( 0 until convoysHash.size ).toList ) ) {
+      val clusterL = List( convoysHash( lIdx ) )
+      val rIdx = convoysHash.zipWithIndex.map( c => ( c._2, clusterDistance( c._1, clusterL.toList )) ).maxBy( _._2 )._1
+      val clusterR = List( convoysHash( rIdx ) )
+
+      val idxs = Random.shuffle( ( 0 until convoys.size ).filter( x => x != lIdx && x != rIdx ).toList )
+      val unassigned = idxs.map( convoysHash( _ ) )
+
+      val res = clusterMuxDFS( clusterL, clusterR, unassigned )
+      if ( res._2 ) {
+        val reordered = (res._1 zip idxs).toList ++ List( ( false, lIdx ) ) ++ List( ( true, rIdx ) )
+        return reordered.sortBy( _._2 ).map( _._1 )
+      }
     }
-    // Fix me: This is an arbitrary rule with no strong reasoning ( other than too early to do this )
-    if ( cycStart > 2 )
-      return ( List.fill( convoys.size ) { Set[Person]() }, convoys )
-    // Look at adds the split, if common section is entire set then reduce the split by 1 cause can put all on one side
-    if ( convoys.map( s => s == commonSection ).reduce( _ || _ ) )
-      cycStop -= 1
-    println( "cycStop = " + cycStop )
-    println( "cycStart = " + cycStart )
-    val splitOff = commonSection.filter( _.roadTripTime <= cycStop ).toSet
-    val lConvoy = convoys.map( c => if ( c.isEmpty ) Set[Person]() else splitOff ).toList
-    val rConvoy = convoys.map( c => { c -- splitOff.toSet } ).toList
-    ( lConvoy, rConvoy )
+    throw new NoSolution( "Mux couldn't find a solution" )
+    List[Boolean]()
   }
 
   /** Generate a mux split on everything that has the next most needed thing in common
@@ -132,13 +263,15 @@ object SumScheduler {
     */
   def generateMuxSplit( convoys : List[Set[Person]] ) : List[Boolean] = {
     val uniqueConvoys = getUniqueConvoys( convoys )
-    val minRemain = getMinTrip( uniqueConvoys )
-    val withMin = uniqueConvoys.map( convoy => convoy.filter( _.roadTripTime == minRemain ).toList ).reduce( _ ++ _ )
-    val bestPerson = withMin.groupBy( x => x ).map( x => { ( x._1, x._2.size ) }).maxBy( _._2 )._1
-    // ensure not all on one side - only happen if one set is best person
-    if ( convoys.map( s => s == Set( bestPerson ) ).reduce( _ || _ ) )
-      return convoys.map( s => s != Set( bestPerson ) )
-    convoys.map( !_.contains(bestPerson) )
+    val muxSplit = clusterSplit( uniqueConvoys )
+    convoys.map( c => {
+      val idx = uniqueConvoys.indexOf( c )
+      assert( idx != -1 || c.isEmpty, "Should only not be found if empty" )
+      if ( idx == -1 )
+        false
+      else
+        muxSplit( idx )
+    })
   }
 
   /** Convert a city to cycle position (cp) coordinates
@@ -281,38 +414,35 @@ object SumScheduler {
   def delayUp( currRd : Road ) : Road = {
     currRd.setDelay()
     val convoys = currRd.passLeftUp( currRd.convoyIn() )
-    val lRoad = new Road( convoys.size )
+    val lRoad = new Road( convoys.size, currRd.latency )
     lRoad.addConvoysIn( convoys )
     lRoad
   }
 
   def muxUp( currRd : Road, muxSwitch : List[Boolean] ) : ( Road, Road ) = {
     currRd.setMux()
-    val muxMod = muxSwitch.takeRight(1) ++ muxSwitch.dropRight(1)
+    val muxMod = muxSwitch.drop(1) ++ muxSwitch.take(1)
     for ( i <- 0 until muxSwitch.size )
       currRd.setMuxSwitch( i, muxMod(i) )
     val lConvoy = currRd.convoyIn().zip( muxSwitch ).map( x => if ( x._2 ) Set[Person]() else x._1 )
     val rConvoy = currRd.convoyIn().zip( muxSwitch ).map( x => if ( x._2 ) x._1 else Set[Person]() )
-    println( "mux -> {" + lConvoy + "}, {" + rConvoy + "}" )
-    val lRoad = new Road( lConvoy.size )
-    val rRoad = new Road( rConvoy.size )
+    // println( "mux -> {" + lConvoy + "}, {" + rConvoy + "}" )
+    val lRoad = new Road( lConvoy.size, currRd.latency )
+    val rRoad = new Road( rConvoy.size, currRd.latency )
     lRoad.addConvoysIn( currRd.passLeftUp( lConvoy ) )
     rRoad.addConvoysIn( currRd.passRightUp( rConvoy ) )
     ( lRoad, rRoad )
   }
 
-  def addUp( currRd : Road, lConvoy : List[Set[Person]], rConvoy : List[Set[Person]] ) : ( Road, Road ) = {
+  def addUp( currRd : Road, lPpl : HashSet[Person], rPpl : HashSet[Person] ) : ( Road, Road ) = {
     currRd.setAdd()
 
-    // verify that add is good
     val convoys = currRd.convoyIn()
-    for ( i <- 0 until convoys.size )
-      assert( convoys(i) == lConvoy(i) ++ rConvoy(i), "Add must be correctly split" )
 
-    val lRoad = new Road( lConvoy.size )
-    val rRoad = new Road( rConvoy.size )
-    lRoad.addConvoysIn( currRd.passLeftUp( lConvoy ) )
-    rRoad.addConvoysIn( currRd.passRightUp( rConvoy ) )
+    val lRoad = new Road( convoys.size, currRd.latency )
+    val rRoad = new Road( convoys.size, currRd.latency )
+    lRoad.addConvoysIn( currRd.passLeftUp( convoys.map( c => c.filter( p => lPpl.contains( p ))) ) )
+    rRoad.addConvoysIn( currRd.passRightUp( convoys.map( c => c.filter( p => rPpl.contains( p ))) ) )
     ( lRoad, rRoad )
   }
 
@@ -394,11 +524,11 @@ object SumScheduler {
     */
   def cityMinRoad( city : List[Set[Person]] ) : Int = {
 
-    println( "city = " + city )
+    // println( "city = " + city )
 
     // method 1: do the adds then mux all of them
     val muxRequired = getUniqueConvoys( city ).map( convoy => getMaxTrip( convoy ) - convoyMinRoad( convoy ) )
-    println( "muxRequired = " + muxRequired )
+    // println( "muxRequired = " + muxRequired )
     val method1Res = muxRemaining( muxRequired )
 
     if ( muxRequired.size == 1 )
@@ -424,11 +554,18 @@ object SumScheduler {
     // store roads out of cities
     val roadOut = ArrayBuffer[Road]()
     var idleCyc = Int.MaxValue
+    var noRoads = 0
+
+    // todo: calc latency better
+    val latency = cities.map( convoys => convoys.filterNot( _.isEmpty ).zipWithIndex.map( c => {
+      c._1.maxBy( _.roadTripTime ).roadTripTime - c._2
+    }).max ).max
 
     // TODO shuffle cities order
     for ( city <- cities ) {
       // create road out of city
-      val newRoad = new Road( city.size )
+      val newRoad = new Road( city.size, latency )
+      noRoads += 1
       newRoad.addConvoysIn( city )
       var cityIdle = 0
       var stop = false
@@ -446,66 +583,80 @@ object SumScheduler {
 
         // println( "convoyIn = " + nextRd.convoyIn() )
         println( "minRd = " + minRd )
-        println( "current roads = " + newRoad )
+        // println( "current roads = " + newRoad )
         if ( minRd > 0 ) {
-          // TODO: deal with shifts and neg but for now ignore
-          nextRd.setShift( 0 )
-          nextRd.setNeg( false )
 
-          val lRoad = delayUp( nextRd )
-          nextRd.setLeft( lRoad )
+          var prevRd = nextRd
+          for ( i <- 0 until minRd ) {
+            // TODO: deal with shifts and neg but for now ignore
+            prevRd.setShift( 0 )
+            prevRd.setNeg( false )
+
+            val lRoad = delayUp( prevRd )
+            prevRd.setLeft( lRoad )
+            prevRd = lRoad
+          }
           if ( !stop )
             cityIdle += 1
+          noRoads += minRd
         } else {
           stop = true
           // try to do an add split first
-          val addSplit = generateAddSplit( nextRd.convoyIn() )
-          println( "addSplit = " + addSplit )
-          val addInvalid = ( 0 until nextRd.convoyIn().size ).map( idx => {
-            !nextRd.convoyIn()( idx ).isEmpty && ( addSplit._1(idx).isEmpty || addSplit._2(idx).isEmpty )
-          }).reduce( _ || _ )
-          // if any adds are empty, do mux instead
-          if ( addInvalid ) {
-
-            val muxSwitch = generateMuxSplit( nextRd.convoyIn() )
-
-            println( "mux split = " + muxSwitch )
+          try {
+            val addSplit = generateAddSplit( nextRd.convoyIn() )
+            // if any adds are empty, do mux instead
 
             // TODO: deal with shifts and neg but for now ignore
             nextRd.setShift( 0 )
             nextRd.setNeg( false )
 
-            // create the l and r roads
-            val rds = muxUp( nextRd, muxSwitch )
-            nextRd.setLeft( rds._1 )
-            nextRd.setRight( rds._2 )
-          } else {
-
-            // TODO: deal with shifts and neg but for now ignore
-            nextRd.setShift( 0 )
-            nextRd.setNeg( false )
-
-            println( "add split = " + addSplit )
+            // println( "add split = " + addSplit )
 
             // implement the add
             val rds = addUp( nextRd, addSplit._1, addSplit._2 )
             nextRd.setLeft( rds._1 )
             nextRd.setRight( rds._2 )
+            noRoads += 2
+          } catch {
+            case x : NoSolution => {
+              val muxSwitch = generateMuxSplit( nextRd.convoyIn() )
+              // println( "mux split = " + muxSwitch )
+
+              // TODO: deal with shifts and neg but for now ignore
+              nextRd.setShift( 0 )
+              nextRd.setNeg( false )
+
+              // create the l and r roads
+              val rds = muxUp( nextRd, muxSwitch )
+              nextRd.setLeft( rds._1 )
+              nextRd.setRight( rds._2 )
+              noRoads += 2
+            }
           }
         }
-
       }
       if ( cityIdle < idleCyc )
         idleCyc = cityIdle
       roadOut += newRoad
     }
     println( "idleCyc = " + idleCyc )
+    println( "noRoads = " + noRoads )
     return roadOut.toList
   }
 
   def implementStructure( cities : List[Road], inputs : List[Fixed], validIn : Bool ) : List[Fixed] = {
     cities.map( _.implementRoad( inputs, validIn ) )
   }
+
+  def writeRdToDot( cityRoads : List[Road], filename : String = "rd.dot" ) = {
+    val writer = new java.io.PrintWriter(new java.io.File( filename ))
+    writer.write( "digraph G {\n" )
+    for ( rd <- cityRoads )
+      writer.write( rd.toDot() )
+    writer.write( "}\n" )
+    writer.close()
+  }
+
 }
 
 /** This class implements a sum scheduler
@@ -518,23 +669,23 @@ object SumScheduler {
   * essentially routing from io.in to sums, but know destination beforehand
   * should allow repeated adds? eg ( 1, 0 ), ( 1, 0 ) to get 2*x ... not allowed for now ...
   */
-class SumScheduler( bw : Int, fw : Int, sumStructure : List[Set[(Int, Int)]], outSize : Int ) extends Module {
+class SumScheduler( bw : Int, fw : Int, sumStructure : List[List[Set[(Int, Int, Int, Boolean)]]], outCyc : List[List[Int]] ) extends Module {
 
-  val noPos = sumStructure.reduce( _ ++ _ ).map( _._2 ).max
-  val noCycles = sumStructure.reduce( _ ++ _ ).map( _._1 ).max
+  val noPos = sumStructure.map( x => x.map( _.maxBy( _._2 )._2 ).max ).max + 1
 
   val io = new Bundle {
     val in = Vec( noPos, Fixed( INPUT, bw, fw ) )
-    val out = Vec( outSize, Fixed( OUTPUT, bw, fw ) )
+    val out = Vec( outCyc.size, Fixed( OUTPUT, bw, fw ) )
   }
 
-  /** For each sum provided output ( cycle, position ) */
-  def getOutStructure() : List[(Int, Int)] = {
-    // TODO: pass structure out
-    List[(Int, Int)]()
-  }
+  val cities = ( sumStructure zip outCyc ).map( x => SumScheduler.cpToCity( x._1, x._2 ) )
 
+  println( "SumScheduler: cities = " + cities )
 
+  val cityRoads = SumScheduler.buildRoads( cities )
+  SumScheduler.writeRdToDot( cityRoads )
 
+  val out = SumScheduler.implementStructure( cityRoads, io.in.toList, Bool(true) )
+  io.out := Vec( out )
 }
 
