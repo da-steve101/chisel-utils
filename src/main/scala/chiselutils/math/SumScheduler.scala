@@ -185,9 +185,9 @@ object SumScheduler {
     * Generate a split left and right
     * If put all on one side will ignore an default to mux
     */
-  def generateAddSplit( convoys : List[Set[Person]] ) : (
+  def generateAddSplit( cityToSplit : City ) : (
     HashSet[Person], HashSet[Person] ) = {
-    val uniqueConvoys = getUniqueConvoys( convoys )
+    val uniqueConvoys = cityToSplit.getUnique()
 
     // TODO: try other splitting methods
 
@@ -261,13 +261,11 @@ object SumScheduler {
   /** Generate a mux split on everything that has the next most needed thing in common
     * Forbidden to generate a mux all on one side
     */
-  def generateMuxSplit( convoys : List[Set[Person]] ) : List[Boolean] = {
-    val uniqueConvoys = getUniqueConvoys( convoys )
+  def generateMuxSplit( cityToSplit : City ) : List[Boolean] = {
+    val uniqueConvoys = cityToSplit.getUnique()
     val muxSplit = clusterSplit( uniqueConvoys )
-    convoys.map( c => {
-      val idx = uniqueConvoys.indexOf( c )
-      assert( idx != -1 || c.isEmpty, "Should only not be found if empty" )
-      if ( idx == -1 )
+    cityToSplit.getIdxs().map( idx => {
+      if ( idx == -1 ) // empty
         false
       else
         muxSplit( idx )
@@ -374,48 +372,10 @@ object SumScheduler {
     convoy.map( p => { Person( p.roadTripTime, p.beachId, p.shift - shift, p.neg ) } )
   }
 
-  def moveConvoys( convoys : List[Set[Person]] ) : List[Set[Person]] = {
-    val rotated = convoys.drop(1) ++ List( convoys.head )
-    subCycles( rotated, 1 )
-  }
-
-  def antiMovePossible( possible : ( Set[Person], List[Int] ), noConvoys : Int ) :
-      ( Set[Person], List[Int] ) = {
-    ( possible._1.map( p => Person( p.roadTripTime + 1, p.beachId, p.shift, p.neg ) ),
-      possible._2.map( i => ( (i + 1) % noConvoys ) ) )
-  }
-
-  def separateConvoy( road : Road,
-    lConvoy : List[Set[Person]],
-    rConvoy : List[Set[Person]],
-    currConvoy : Set[Person] ) : ( Set[Person], Set[Person] ) = {
-    for ( l <- lConvoy ) {
-      val lCalc = negConvoy( subShift( l, -road.getShift() ), road.getNeg() )
-      val lMod = lCalc.map( p => Person( p.roadTripTime + 1, p.beachId, p.shift, p.neg ) )
-      for ( r <- rConvoy ) {
-        val rMod = r.map( p => Person( p.roadTripTime + 1, p.beachId, p.shift, p.neg ) )
-        if ( road.isDelay() ) {
-          if ( lMod == currConvoy )
-            return ( l, Set[Person]() )
-        } else if ( road.isAdd() ) {
-          if ( lMod ++ rMod == currConvoy )
-            return ( l, rMod )
-        } else {
-          if ( lMod == currConvoy )
-            return ( lMod, Set[Person]() )
-          if ( rMod == currConvoy )
-            return ( Set[Person](), rMod )
-        }
-      }
-    }
-    return ( Set[Person](), Set[Person]() )
-  }
-
   def delayUp( currRd : Road ) : Road = {
     currRd.setDelay()
-    val convoys = currRd.passLeftUp( currRd.convoyIn() )
-    val lRoad = new Road( convoys.size, currRd.latency )
-    lRoad.addConvoysIn( convoys )
+    val lRoad = new Road( currRd.noConvoy, currRd.latency )
+    lRoad.addConvoysIn( currRd.passLeftUp( currRd.getCity() ) )
     lRoad
   }
 
@@ -424,25 +384,30 @@ object SumScheduler {
     val muxMod = muxSwitch.drop(1) ++ muxSwitch.take(1)
     for ( i <- 0 until muxSwitch.size )
       currRd.setMuxSwitch( i, muxMod(i) )
-    val lConvoy = currRd.convoyIn().zip( muxSwitch ).map( x => if ( x._2 ) Set[Person]() else x._1 )
-    val rConvoy = currRd.convoyIn().zip( muxSwitch ).map( x => if ( x._2 ) x._1 else Set[Person]() )
-    // println( "mux -> {" + lConvoy + "}, {" + rConvoy + "}" )
-    val lRoad = new Road( lConvoy.size, currRd.latency )
-    val rRoad = new Road( rConvoy.size, currRd.latency )
-    lRoad.addConvoysIn( currRd.passLeftUp( lConvoy ) )
-    rRoad.addConvoysIn( currRd.passRightUp( rConvoy ) )
+    val lRoad = new Road( currRd.noConvoy, currRd.latency )
+    val rRoad = new Road( currRd.noConvoy, currRd.latency )
+    println( "muxing up " + currRd.getCity() )
+    println( "using muxSwitch = " + muxSwitch )
+    println( "left = " + currRd.passLeftUp( currRd.getCity() ) )
+    println( "right = " + currRd.passRightUp( currRd.getCity() ) )
+    lRoad.addConvoysIn( currRd.passLeftUp( currRd.getCity() ) )
+    rRoad.addConvoysIn( currRd.passRightUp( currRd.getCity() ) )
     ( lRoad, rRoad )
   }
 
   def addUp( currRd : Road, lPpl : HashSet[Person], rPpl : HashSet[Person] ) : ( Road, Road ) = {
     currRd.setAdd()
 
-    val convoys = currRd.convoyIn()
+    // set currRd add split
+    for ( l <- lPpl )
+      currRd.setAddLeft( l )
+    for ( r <- rPpl )
+      currRd.setAddRight( r )
 
-    val lRoad = new Road( convoys.size, currRd.latency )
-    val rRoad = new Road( convoys.size, currRd.latency )
-    lRoad.addConvoysIn( currRd.passLeftUp( convoys.map( c => c.filter( p => lPpl.contains( p ))) ) )
-    rRoad.addConvoysIn( currRd.passRightUp( convoys.map( c => c.filter( p => rPpl.contains( p ))) ) )
+    val lRoad = new Road( currRd.noConvoy, currRd.latency )
+    val rRoad = new Road( currRd.noConvoy, currRd.latency )
+    lRoad.addConvoysIn( currRd.passLeftUp( currRd.getCity() ) )
+    rRoad.addConvoysIn( currRd.passRightUp( currRd.getCity() ) )
     ( lRoad, rRoad )
   }
 
@@ -524,8 +489,6 @@ object SumScheduler {
     */
   def cityMinRoad( city : List[Set[Person]] ) : Int = {
 
-    // println( "city = " + city )
-
     // method 1: do the adds then mux all of them
     val muxRequired = getUniqueConvoys( city ).map( convoy => getMaxTrip( convoy ) - convoyMinRoad( convoy ) )
     // println( "muxRequired = " + muxRequired )
@@ -574,16 +537,17 @@ object SumScheduler {
       while( !newRoad.completed() ) {
         val nextRd = newRoad.nextIncomplete().get
 
+        println( "rds = " + newRoad )
+
         // choose what nextRd should be
-        val minRd = cityMinRoad( nextRd.convoyIn() )
+        val minRd = cityMinRoad( nextRd.getCity().getUnique() )
+        println( "nextRd.getCity() = " + nextRd.getCity() )
         if ( nextRd != newRoad )
           assert( minRd >= 0, "Bug: Cannot generate hardware, Internal miscalculation of cycles, minRd = " + minRd )
         else
           assert( minRd >= 0, "Cannot generate hardware, possibly not enough cycles available for user input, minRd = " + minRd )
 
-        // println( "convoyIn = " + nextRd.convoyIn() )
         println( "minRd = " + minRd )
-        // println( "current roads = " + newRoad )
         if ( minRd > 0 ) {
 
           var prevRd = nextRd
@@ -603,14 +567,14 @@ object SumScheduler {
           stop = true
           // try to do an add split first
           try {
-            val addSplit = generateAddSplit( nextRd.convoyIn() )
+            val addSplit = generateAddSplit( nextRd.getCity() )
             // if any adds are empty, do mux instead
 
             // TODO: deal with shifts and neg but for now ignore
             nextRd.setShift( 0 )
             nextRd.setNeg( false )
 
-            // println( "add split = " + addSplit )
+            println( "add split = " + addSplit )
 
             // implement the add
             val rds = addUp( nextRd, addSplit._1, addSplit._2 )
@@ -619,8 +583,8 @@ object SumScheduler {
             noRoads += 2
           } catch {
             case x : NoSolution => {
-              val muxSwitch = generateMuxSplit( nextRd.convoyIn() )
-              // println( "mux split = " + muxSwitch )
+              val muxSwitch = generateMuxSplit( nextRd.getCity() )
+              println( "mux split = " + muxSwitch )
 
               // TODO: deal with shifts and neg but for now ignore
               nextRd.setShift( 0 )

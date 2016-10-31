@@ -5,58 +5,51 @@ import Chisel._
 
 /** A Road in the city beaches problem
   */
-class Road( noConvoy : Int, val latency : Int ) {
+class Road( val noConvoy : Int, val latency : Int ) {
 
   // the convoy that goes into the road
   // the convoy can change following merges
-  private val convoyLayout = ArrayBuffer.fill( noConvoy ) { Set[Person]() }
+  private val cityForRd = new City( noConvoy )
   private val muxSwitch = ArrayBuffer.fill( noConvoy ) { false }
+  private val addSwitch = ( collection.mutable.HashSet[Person](), collection.mutable.HashSet[Person]() )
 
   // a method to perform merges
   def addConvoysIn( convoys : List[Set[Person]] ) = {
-    assert( convoys.size == noConvoy, "convoys in should be the same size" )
-    for ( i <- 0 until noConvoy ) {
-      if ( convoyLayout( i ) != convoys( i ) ) {
-        assert( convoyLayout(i).isEmpty, "Cannot merge over a non empty slot" )
-        convoyLayout(i) = convoys(i)
-      }
-    }
-    // look at convoy and check if can set isBeach (ie complete)
-    val convoyCheck = convoyLayout.filterNot( _.isEmpty ).map( convoy => {
-      val beachInfo = convoy.map( p => {
-        if ( p.atBeach() )
-          p.beachId
-        else
-          -p.beachId - 1
-      })
-      ( beachInfo.max, beachInfo.min )
-    })
+    val unqConvoys = convoys.toSet.toList
+    val cIdxs = convoys.map( unqConvoys.indexOf( _ ) )
 
-    assert( convoyCheck.size > 0, "Should never generate a useless road" )
+    val res = cityForRd.addConvoysIn( unqConvoys, cIdxs )
+    complete |= res._1
+    beachId = res._2
+  }
 
-    // if any at beach then all must be at same beach
-    if ( convoyCheck.maxBy( _._1 )._1 >= 0 ) {
-      val maxC = convoyCheck.maxBy( _._1 )
-      val minC = convoyCheck.minBy( _._2 )
-      assert( maxC._1 == maxC._2 && maxC == minC,
-        "If any person is at a beach, they all must be at exactly the same beach" )
-      complete = true
-      beachId = maxC._1
-    }
+  def addConvoysIn( newCity : City ) = {
+    val res = cityForRd.addConvoysIn( newCity )
+    complete |= res._1
+    beachId = res._2
   }
 
   private var beachId = -1
   private var lRoad = None : Option[Road]
   private var rRoad = None : Option[Road]
+  private var parentRds = ArrayBuffer[Road]()
   private var shift = 0
   private var neg = false
   private var complete = false
   private var roadType = -1
 
-  def setLeft( l : Road ) { lRoad = Some(l) }
-  def setRight( r : Road ) { rRoad = Some(r) }
+  def setLeft( l : Road ) {
+    lRoad = Some(l)
+    l.setParent( this )
+  }
+  def setRight( r : Road ) {
+    rRoad = Some(r)
+    r.setParent( this )
+  }
+  protected def setParent( p : Road ) { parentRds += p }
   def getLeft() = lRoad
   def getRight() = rRoad
+  def getParents() = parentRds.toList
 
   def getShift() = shift
   def setShift( s : Int ) = { shift = s }
@@ -66,7 +59,12 @@ class Road( noConvoy : Int, val latency : Int ) {
   def getMuxSwitch( i : Int ) = { muxSwitch(i) }
   def setMuxSwitch( i : Int, lr : Boolean ) = { muxSwitch(i) = lr }
 
-  def convoyIn() = { convoyLayout.toList }
+  def getAddLeft() = addSwitch._1.toList
+  def getAddRight() = addSwitch._2.toList
+  def setAddLeft( p : Person ) = { addSwitch._1 += p }
+  def setAddRight( p : Person ) = { addSwitch._2 += p }
+
+  def getCity() = { cityForRd }
 
   def isMux() = { roadType == 0 }
   def setMux() = { roadType = 0 }
@@ -102,16 +100,20 @@ class Road( noConvoy : Int, val latency : Int ) {
   }
 
   def passLeftDown( convoy : Set[Person] ) : Set[Person] = {
-    return convoy.map( passLeftDown( _ ) )
+    convoy.map( passLeftDown( _ ) )
   }
   def passRightDown( convoy : Set[Person] ) : Set[Person] = {
-    return convoy.map( passRightDown( _ ) )
+    convoy.map( passRightDown( _ ) )
   }
   def passLeftUp( convoy : Set[Person] ) : Set[Person] = {
-    return convoy.map( passLeftUp( _ ) )
+    if ( isAdd() )
+      return convoy.filter( addSwitch._1.contains( _ ) ).map( passLeftUp( _ ) )
+    convoy.map( passLeftUp( _ ) )
   }
   def passRightUp( convoy : Set[Person] ) : Set[Person] = {
-    return convoy.map( passRightUp( _ ) )
+    if ( isAdd() )
+      return convoy.filter( addSwitch._2.contains( _ ) ).map( passRightUp( _ ) )
+    convoy.map( passRightUp( _ ) )
   }
 
   /** Need to rotate the convoy around to enforce the fact that it should repeat
@@ -141,6 +143,61 @@ class Road( noConvoy : Int, val latency : Int ) {
     val shiftedConvoy = convoys.map( passRightUp( _ ) )
     shiftedConvoy.drop(1) ++ shiftedConvoy.take(1)
   }
+
+  def passLeftDown( oldCity : City ) : City = {
+    val uniqueShifted = oldCity.getUnique().map( passLeftDown( _ ) )
+    val origIdxs = oldCity.getIdxs()
+    val shiftedIdxs = origIdxs.takeRight(1) ++ origIdxs.dropRight(1)
+    val newCity = new City( noConvoy )
+    newCity.addConvoysIn( uniqueShifted, shiftedIdxs )
+    newCity
+  }
+  def passRightDown( oldCity : City ) : City = {
+    val uniqueShifted = oldCity.getUnique().map( passRightDown( _ ) )
+    val origIdxs = oldCity.getIdxs()
+    val shiftedIdxs = origIdxs.takeRight(1) ++ origIdxs.dropRight(1)
+    val newCity = new City( noConvoy )
+    newCity.addConvoysIn( uniqueShifted, shiftedIdxs )
+    newCity
+  }
+  def passLeftUp( oldCity : City ) : City = {
+    val uniqueShifted = oldCity.getUnique().map( passLeftUp( _ ) )
+    // verify is unique in case of add
+    val origIdxs = oldCity.getIdxs()
+    val rotatedIdxs = origIdxs.drop(1) ++ origIdxs.take(1)
+    val muxedIdxs = {
+      if ( isMux() )
+        (muxSwitch zip rotatedIdxs).map( x => if ( x._1 ) -1 else x._2 )
+      else
+        rotatedIdxs
+    }
+    val idxUsed = muxedIdxs.distinct
+    val newUnique = uniqueShifted.zipWithIndex.filter( x => idxUsed.contains(x._2) ).map( _._1 ).distinct
+    val idxMapping = uniqueShifted.map( newUnique.indexOf( _ ) )
+
+    val newCity = new City( noConvoy )
+    newCity.addConvoysIn( newUnique, muxedIdxs.toList.map( newCity.mapIdx( idxMapping, _ ) ) )
+    newCity
+  }
+  def passRightUp( oldCity : City ) : City = {
+    val uniqueShifted = oldCity.getUnique().map( passRightUp( _ ) )
+    val origIdxs = oldCity.getIdxs()
+    val rotatedIdxs = origIdxs.drop(1) ++ origIdxs.take(1)
+    val muxedIdxs = {
+      if ( isMux() )
+        (muxSwitch zip rotatedIdxs).map( x => if ( x._1 ) x._2 else -1 )
+      else
+        rotatedIdxs
+    }
+    val idxUsed = muxedIdxs.distinct
+    val newUnique = uniqueShifted.zipWithIndex.filter( x => idxUsed.contains(x._2) ).map( _._1 ).distinct
+    val idxMapping = uniqueShifted.map( newUnique.indexOf( _ ) )
+
+    val newCity = new City( noConvoy )
+    newCity.addConvoysIn( newUnique, muxedIdxs.toList.map( newCity.mapIdx( idxMapping, _ ) ) )
+    newCity
+  }
+
 
   def nextIncomplete() : Option[Road] = {
     if ( completed() )
@@ -172,7 +229,6 @@ class Road( noConvoy : Int, val latency : Int ) {
       val latShift = latency % muxSwitch.size
       val muxRotated = muxSwitch.takeRight( latShift ) ++ muxSwitch.dropRight( latShift )
       println( "Mux switch for Road@" + hashCode + " = " + muxSwitch )
-      // println( "Convoy for Road@" + hashCode + " = " + convoyLayout )
       println( "Mux rotated with " + latShift + " for Road@" + hashCode + " = " + muxRotated )
       val ctr = Counter( validIn, noConvoy )
       val switchVec = Vec( muxRotated.map( Bool(_) ) )
@@ -195,14 +251,14 @@ class Road( noConvoy : Int, val latency : Int ) {
   }
 
   override def toString() : String = {
-    "Road@" + hashCode + "( " + roadType + ", " + shift + ", " + neg + ", " + beachId + " ) -> ( " + {
+    "Road@" + hashCode + "( " + roadType + ", " + shift + ", " + neg + ", " + beachId + " ) with " + getCity() + " -> ( " + {
       if ( lRoad.isDefined ) "Road@" + lRoad.get.hashCode else "" } + ", " + {
       if ( rRoad.isDefined ) "Road@" + rRoad.get.hashCode else "" } + " )\n" + {
       if ( lRoad.isDefined ) lRoad.get else "" } + {
       if ( rRoad.isDefined ) rRoad.get else "" }
   }
 
-  def toDot( shorten : Boolean = false) : String = {
+  def toDot( shorten : Boolean = true) : String = {
     val nodeProp = {
       if ( isMux() )
         "[shape=box]"
@@ -222,20 +278,22 @@ class Road( noConvoy : Int, val latency : Int ) {
       prevRd = currRd
       currRd = currRd.getLeft().get
     }
-    if ( isDelay() && shorten ) {
-      "Road" + hashCode + " " + " [label=Delay_" + count +"_Road" + hashCode + "];\n"
-    } else {
-      "Road" + hashCode + " " + nodeProp + ";\n"
-    } + {
-        if ( prevRd.getLeft().isDefined )
-          "Road" + hashCode + " -> " + "Road" + prevRd.getLeft().get.hashCode + " [color=green];\n" + prevRd.getLeft().get.toDot()
-        else
-          ""
-      } + {
-        if ( prevRd.getRight().isDefined )
-          "Road" + hashCode + " -> " + "Road" + prevRd.getRight().get.hashCode + " [color=red];\n" + prevRd.getRight().get.toDot()
-        else
+    val dec = {
+      if ( isDelay() && shorten )
+        "Road" + hashCode + " " + " [label=Delay_" + count +"_Road" + hashCode + "];\n"
+      else
+        "Road" + hashCode + " " + nodeProp + ";\n"
+    }
+    dec + {
+      if ( prevRd.getLeft().isDefined )
+        "Road" + hashCode + " -> " + "Road" + prevRd.getLeft().get.hashCode + " [color=green];\n" + prevRd.getLeft().get.toDot()
+      else
         ""
-      }
+    } + {
+      if ( prevRd.getRight().isDefined )
+        "Road" + hashCode + " -> " + "Road" + prevRd.getRight().get.hashCode + " [color=red];\n" + prevRd.getRight().get.toDot()
+      else
+        ""
+    }
   }
 }
