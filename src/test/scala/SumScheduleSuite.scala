@@ -5,6 +5,8 @@ import scala.util.Random
 import scala.collection.mutable.ArrayBuffer
 import chiselutils.algorithms.Node
 import chiselutils.algorithms.Transforms
+import chiselutils.algorithms.AnnealingSolver
+import scala.collection.immutable.HashSet
 
 class SumScheduleSuite extends TestSuite {
 
@@ -20,7 +22,45 @@ class SumScheduleSuite extends TestSuite {
     uk.map( s => s.map( v => { Vector( v(0) + 1 ) ++ v.drop(1) }))
   }
 
+  def testLinks( nodes : HashSet[Node] ) : Boolean = {
+    for ( n <- nodes ) {
+      if ( n.getL().isDefined ) {
+        if ( !nodes.contains( n.getL().get ) ) {
+          println( n.getL().get + " not in nodes (L) " )
+          return false
+        }
+        if ( !n.getL().get.getParents().contains( n ) ) {
+          println( "Parents doesn't have n (L)" )
+          return false
+        }
+        for ( p <- n.getL().get.getParents() ) {
+          if ( !nodes.contains( p ) ) {
+            println( "Parent node not in nodes (L)" )
+            return false
+          }
+        }
+      }
+      if ( n.getR().isDefined ) {
+        if ( !nodes.contains( n.getR().get ) ) {
+          println( n.getR().get + " not in nodes (R) " )
+          return false
+        }
+        if ( !n.getR().get.getParents().contains( n ) ) {
+          println( "Parents doesn't have n (R)" )
+          return false
+        }
+        for ( p <- n.getR().get.getParents() ) {
+          if ( !nodes.contains( p ) ) {
+            println( "Parent node not in nodes (R)" )
+            return false
+          }
+        }
+      }
+    }
+    true
+  }
 
+/*
   /** Test the sum constraint
     */
   @Test def testConstraintA {
@@ -124,7 +164,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintA( nodeSwap ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap, 0 )
 
     assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
@@ -156,7 +196,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeSwap ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap, 0 )
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
@@ -502,6 +542,41 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
     assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isB() )
+  }
+ */
+  @Test def simpleGraph {
+    val cp = List(
+      Set( Vector( 5, 0 ), Vector( 4, 1 ) ),
+      Set( Vector( 5, 0 ), Vector( 4, 1 ), Vector( 3, 2 ) ),
+      Set( Vector( 4, 1 ), Vector( 3, 2 ) )
+    )
+    var nodes = AnnealingSolver.init( List( cp ) )._1
+    for ( i <- 0 until 100 ) {
+      assert( testLinks( nodes ), "Node collection should be valid" )
+      val dotFile = "nodeMap" + (i/10) + ".dot"
+      println( "writing to " + "nodeMap" + (i/10) + ".dot")
+      AnnealingSolver.toDot( nodes, dotFile )
+
+      // verify all nodes
+      for ( n <- nodes ) {
+        val valid = Node.satisfiesConstraints(n)
+        val lValid = { if ( n.getL().isDefined ) n.getL().get.hasParent(n) else true }
+        val rValid = { if ( n.getR().isDefined ) n.getR().get.hasParent(n) else true }
+        if ( !valid || !lValid || !rValid ) {
+          println( "Node = " + n )
+          println( "Node.getL() = " + n.getL() )
+          println( "Node.getR() = " + n.getR() )
+          if ( n.getL().isDefined )
+            println( "Node.getL().parents = " + n.getL().get.getParents() )
+          if ( n.getR().isDefined )
+            println( "Node.getR().parents = " + n.getR().get.getParents() )
+        }
+        assert( valid, "Node " + n + " did not satisfy constraints" )
+      }
+
+      // overwrite each cycle to catch changes
+      nodes = AnnealingSolver.applyOperation( nodes, i.toDouble/100 )
+    }
   }
 
 }

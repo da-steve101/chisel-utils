@@ -5,7 +5,7 @@ lazy val olkSettings = Seq(
 
   version := "0.1",
 
-  name := "chiselUtils",
+  name := "chiselutils",
 
   scalaVersion := "2.11.7",
 
@@ -23,5 +23,5 @@ lazy val olkSettings = Seq(
 
 // lazy val chisel = RootProject(uri("git://github.com/da-steve101/chisel.git"))
 lazy val optimus = RootProject(uri("git://github.com/vagm/Optimus.git"))
-lazy val chiselUtils = (project in file(".")).settings(olkSettings: _*).dependsOn(optimus)
+lazy val chiselutils = (project in file(".")).settings(olkSettings: _*).dependsOn(optimus)
 

@@ -4,6 +4,7 @@
 package chiselutils.algorithms
 
 import collection.mutable.ArrayBuffer
+import scala.util.Random
 
 object Transforms {
 
@@ -17,12 +18,16 @@ object Transforms {
     val bIdxMap = ArrayBuffer[Int]()
     val uKc = ArrayBuffer[Set[Vector[Int]]]()
     while ( aIdx < uKa.size || bIdx < uKb.size ) {
-      if ( bIdx == uKb.size || ( aIdx != uKa.size && uKa(aIdx).hashCode < uKb(bIdx).hashCode ) ) {
+      if ( bIdx == uKb.size || ( aIdx < uKa.size && uKa(aIdx).hashCode < uKb(bIdx).hashCode ) ) {
         aIdxMap += uKc.size
         uKc += uKa( aIdx )
         aIdx += 1
       } else {
         bIdxMap += uKc.size
+        if ( aIdx < uKa.size && uKa( aIdx ) == uKb( bIdx ) ) {
+          aIdx += 1
+          aIdxMap += uKc.size 
+        }
         uKc += uKb( bIdx )
         bIdx += 1
       }
@@ -38,6 +43,13 @@ object Transforms {
     * look if all L or all R for mux. if so set l/r
     */
   def tryMerge( nA : Node , nB : Node ) : Option[Node] = {
+
+    println( "tryMerge nA = " + nA + ", nB = " + nB )
+
+    // checkType
+    if ( nA.isA() != nB.isA() || nA.isB() != nB.isB() || nA.isC() != nB.isC() )
+      return None
+
     // check number of distinct inputs
     val sameIn = nA.getL() == nB.getL() && nA.getR() == nB.getR()
     val oppositeIn = nA.getL() == nB.getR() && nA.getR() == nB.getL()
@@ -58,22 +70,23 @@ object Transforms {
       })
       // create the new node
       val nC = Node( mapping._1, ck )
+      if ( nA.isA() )
+        nC.setA()
+      if ( nA.isB() )
+        nC.setB()
+      if ( nA.isC() )
+        nC.setC()
 
-      // set l/r and parents
-      if ( sameIn ) {
-        if ( nA.getL().isDefined )
-          nC.setL( nA.getL().get )
-        if ( nA.getR().isDefined )
-          nC.setR( nA.getR().get )
-      } else {
-        if ( nA.getR().isDefined )
-          nC.setL( nA.getR().get )
-        if ( nA.getL().isDefined )
-          nC.setR( nA.getL().get )
-      }
+      // set l/r
+      if ( nA.getL().isDefined ) 
+        nC.setL( nA.getL().get )
+      if ( nA.getR().isDefined )
+        nC.setR( nA.getR().get )
 
       // fix parent links
-      for ( p <- nA.getParents() ++ nB.getParents() ) {
+      val parents = nA.getParents() ++ nB.getParents()
+      println( "parents = " + parents )
+      for ( p <- parents  ) {
         if ( p.getL().isDefined && ( p.getL().get == nA || p.getL().get == nB ) )
           p.setL( nC )
         if ( p.getR().isDefined && ( p.getR().get == nA || p.getR().get == nB ) )
@@ -96,6 +109,7 @@ object Transforms {
 
   private def combineAdd( uk1 : List[Set[Vector[Int]]], ck1 : List[Int],
     uk2 : List[Set[Vector[Int]]], ck2 : List[Int] ) : ( List[Set[Vector[Int]]], List[Int] ) = {
+    println( "try to combine " + uk1 + ", " + ck1 + " and " + uk2 + ", " + ck2 )
     val ckCombined = ck1.zip( ck2 )
     val uKidx = ckCombined.distinct.filter( _ != ( -1, -1 ) )
     val ckNew = ckCombined.map( uKidx.indexOf( _ ) )
@@ -140,6 +154,7 @@ object Transforms {
     * nodeB.rNode = nSwap.rNode
     */
   private def swapCase1( nPar : Node, nSwap : Node ) : List[Node] = {
+    println( "swapCase1" )
     val nodeAuK = nSwap.getL().get.getUkNext()
     val nodeAcK = nSwap.getL().get.getCkNext()
     val nodeAcKFiltered = nodeAcK.zip( nSwap.getCk() ).map( z => if ( z._2 == -1 ) -1 else z._1 )
@@ -175,6 +190,7 @@ object Transforms {
     * nodeB.rNode = nSwap.rNode
     */
   private def swapCase2( nPar : Node, nSwap : Node ) : List[Node] = {
+    println( "swapCase2" )
     val nodeList = swapCase1( nPar, nSwap ) // same as nPar holds the add/mux info
     nPar.setB()
     nodeList
@@ -193,6 +209,8 @@ object Transforms {
     * nodeB.rNode = nOther.rNode
     */
   private def swapCase4( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
+    println( "swapCase4" )
+
     // nSwap must be the reg by itself
     // rotate so that nOther.rNode + nSwap.lNode and nOther.lNode is reg
 
@@ -234,6 +252,7 @@ object Transforms {
     * nodeB.rNode = nOther.rNode
     */
   private def swapCase5( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
+    println( "swapCase5" )
     val otherLFiltered = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otherRFiltered = filterCk( nOther.getR().get.getCkNext(), nOther.getCk() )
     val swapLFiltered = filterCk( nSwap.getL().get.getCkNext(), nSwap.getCk() )
@@ -270,6 +289,7 @@ object Transforms {
     * nodeA.rNode = nOther.lNode
     */
   private def swapCase6( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
+    println( "swapCase6" )
 
     val othercK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otheruK = nOther.getL().get.getUkNext()
@@ -300,14 +320,19 @@ object Transforms {
     * nodeB.rNode = nOther.rNode
     */
   private def swapCase7( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
+    println( "swapCase7" )
+
     val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otherLuK = nOther.getL().get.getUkNext()
     val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.getCk() )
     val otherRuK = nOther.getR().get.getUkNext()
-    val swapcK = nSwap.getCk()
+    val swapcKL = filterCk( nSwap.getCk(), otherLcK )
+    val swapcKR = filterCk( nSwap.getCk(), otherRcK )
     val swapuK = nSwap.getUk()
-    val combAddL = combineAdd( otherLuK, otherLcK, swapuK, swapcK )
-    val combAddR = combineAdd( otherRuK, otherRcK, swapuK, swapcK )
+    println( "swapCase7: nSwap = " + nSwap )
+    println( "swapCase7: nOther = " + nOther )
+    val combAddL = combineAdd( otherLuK, otherLcK, swapuK, swapcKL )
+    val combAddR = combineAdd( otherRuK, otherRcK, swapuK, swapcKR )
     val nodeA = Node( combAddL._1, combAddL._2 )
     nodeA.setL( nOther.getL().get )
     nodeA.setR( nSwap.getL().get )
@@ -334,6 +359,7 @@ object Transforms {
     * nodeA.rNode = nOther.lNode
     */
   private def swapCase10( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
+    println( "swapCase10" )
     val othercK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otheruK = nOther.getL().get.getUkNext()
     val swapcK = filterCk( nSwap.getL().get.getCkNext(), nSwap.getCk() )
@@ -362,6 +388,7 @@ object Transforms {
     * nodeB.lNode = nOther.rNode
     */
   private def swapCase11( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
+    println( "swapCase11" )
     // find common
     val swapLOtherL = nSwap.getL().get == nOther.getL().get
     val swapLOtherR = nSwap.getL().get == nOther.getR().get
@@ -420,6 +447,7 @@ object Transforms {
     * nodeB.rNode = nOther.rNode
     */
   private def swapCase12( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
+    println( "swapCase12" )
     val otherLFiltered = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otherRFiltered = filterCk( nOther.getR().get.getCkNext(), nOther.getCk() )
     val swapLFiltered = filterCk( nSwap.getL().get.getCkNext(), nSwap.getCk() )
@@ -455,6 +483,7 @@ object Transforms {
     * nodeB.rNode = nSwap.lNode
     */
   private def swapCase13( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
+    println( "swapCase13" )
     val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otherLuK = nOther.getL().get.getUkNext()
     val nodeA = Node( otherLuK, otherLcK )
@@ -482,9 +511,14 @@ object Transforms {
 
   /** Look at two nodes and try to swap them
     */
-  def trySwap( nPar : Node, nSwap : Node ) : List[Node] = {
+  def trySwap( nPar : Node, nSwap : Node, threshold : Double = 0.5 ) : List[Node] = {
+
+    println( "run trySwap" )
 
     assert( nSwap.hasParent( nPar ), "For swap must have swap and parent node" )
+
+    // filter ops that increase cost with probablity
+    val applyOp = Random.nextDouble >= threshold
 
     if ( nSwap.isC() )
       return List[Node]()
@@ -492,9 +526,9 @@ object Transforms {
     // work out how nodes are connected ( should be directly )
     if ( nPar.isB() && nPar.getL() == nPar.getR() ) {
       if ( nSwap.isA() )
-        return swapCase1( nPar, nSwap )
+        return { if ( applyOp ) swapCase1( nPar, nSwap ) else List[Node]() }
       if ( nSwap.isB() && nSwap.getL() != nSwap.getR() )
-        return swapCase2( nPar, nSwap )
+        return { if ( applyOp ) swapCase2( nPar, nSwap ) else List[Node]() }
       return List[Node]() // case 3 which no point as changes nothing
     }
     val nOther = { if ( nPar.getL().get == nSwap ) nPar.getR().get else nPar.getL().get }
@@ -542,5 +576,96 @@ object Transforms {
     }
     List[Node]()
   }
+
+  /** Try to split up a node into two
+    * Decide on which parent attaches to what?
+    * Randomally split?
+    */
+  def trySplit( nA : Node ) : List[Node] = {
+    if ( nA.getParents().size <= 1 || nA.isC() )
+      return List[Node]()
+
+    val shuffledPar = Random.shuffle( nA.getParents() )
+    val splitIdx = Random.nextInt( shuffledPar.size - 1 )
+
+    val ckNeeded = shuffledPar.map( n => {
+      if ( n.isA() || n.getL() == n.getR() ) {
+        // adds or reg are easy as all are needed
+        n.getCkPrev().zip( nA.getCk() ).map( ck => {
+          if ( ck._1 == -1 )
+            -1
+          else
+            ck._2
+        })
+      } else {
+        // mux
+        val prevCk = n.getCkPrev()
+        val prevUk = n.getUkPrev()
+        // determine for each ck if uk is provided by split
+        prevCk.zip( nA.getCk() ).map( ck => {
+          if ( ck._1 == -1 )
+            -1
+          else {
+            if ( ck._2 != -1 && prevUk( ck._1 ) == nA.getUk()( ck._2 ) )
+              ck._2
+            else
+              -1
+          }
+        })
+      }
+    })
+
+    val ( n1Par, n2Par ) = shuffledPar.splitAt( splitIdx + 1 )
+    val ( ck1, ck2 ) = ckNeeded.splitAt( splitIdx + 1 )
+    val n1Ck = ( 0 until nA.nodeSize ).map( idx => ck1.map( cks => cks( idx ) ).reduce( (x,y) => {
+      if ( x == -1 )
+        y
+      else {
+        assert( y == x || y == -1, "Invalid combining of parents" )
+        x
+      }
+    }))
+    val n2Ck = ( 0 until nA.nodeSize ).map( idx => ck2.map( cks => cks( idx ) ).reduce( (x,y) => {
+      if ( x == -1 )
+        y
+      else {
+        assert( y == x || y == -1, "Invalid combining of parents" )
+        x
+      }
+    }))
+    val n1 = Node( nA.getUk(), n1Ck.toList )
+    val n2 = Node( nA.getUk(), n2Ck.toList )
+    if ( nA.getL().isDefined ) {
+      n1.setL( nA.getL().get )
+      n2.setL( nA.getL().get )
+    }
+    if ( nA.getR().isDefined ) {
+      n1.setR( nA.getR().get )
+      n2.setR( nA.getR().get )
+    }
+    if ( nA.isA() ) {
+      n1.setA()
+      n2.setA()
+    }
+    if ( nA.isB() ) {
+      n1.setB()
+      n2.setB()
+    }
+    for ( p <- n1Par ) {
+      if ( p.getL().isDefined && p.getL().get == nA )
+        p.setL( n1 )
+      if ( p.getR().isDefined && p.getR().get == nA )
+        p.setR( n1 )
+    }
+    for ( p <- n2Par ) {
+      if ( p.getL().isDefined && p.getL().get == nA )
+        p.setL( n2 )
+      if ( p.getR().isDefined && p.getR().get == nA )
+        p.setR( n2 )
+    }
+
+    return List( n1, n2 )
+  }
+
 
 }

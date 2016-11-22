@@ -81,7 +81,13 @@ object Node {
   }
 
   def satisfiesConstraints( n : Node ) : Boolean = {
-    satisfiesConstraintA( n ) || satisfiesConstraintB( n ) || satisfiesConstraintC( n )
+    if ( n.isA() )
+      return satisfiesConstraintA( n )
+    if ( n.isB() )
+      return satisfiesConstraintB( n )
+    if ( n.isC() )
+      return satisfiesConstraintC( n )
+    false
   }
 
   /** Check that this node satisfies constraints
@@ -103,9 +109,16 @@ object Node {
     true
   }
 
+  def ukPrev( uk : List[Set[Vector[Int]]] ) : List[Set[Vector[Int]]] = {
+    uk.map( uki => uki.map( v => { Vector( v(0) - 1 ) ++ v.drop(1) }))
+  }
+  def ukNext( uk : List[Set[Vector[Int]]] ) : List[Set[Vector[Int]]] = {
+    uk.map( uki => uki.map( v => { Vector( v(0) + 1 ) ++ v.drop(1) }))
+  }
+
 }
 
-class Node( dim : Int, nodeSize : Int ) {
+class Node( val dim : Int, val nodeSize : Int ) {
 
   assert( dim >= 1, "The dimension of p must be atleast 1" )
 
@@ -137,6 +150,16 @@ class Node( dim : Int, nodeSize : Int ) {
   def setA() = { nodeType = 0 }
   def setB() = { nodeType = 1 }
   def setC() = { nodeType = 2 }
+  def letter() = {
+    if ( nodeType == 0 )
+      "A"
+    else if ( nodeType == 1 )
+      "B"
+    else if ( nodeType == 2 )
+      "C"
+    else
+      "_"
+  }
 
   def getCk() = ck.toList
   def getCkPrev() = { ck.drop(1).toList ++ ck.take(1).toList }
@@ -158,20 +181,28 @@ class Node( dim : Int, nodeSize : Int ) {
   def getL() = lNode
   def getR() = rNode
   def setL( n : Node ) = {
-    if ( lNode.isDefined )
+    if ( lNode.isDefined && lNode != rNode )
       lNode.get.removeParent( this )
+    println( this + ".setL( " + n + " )" )
     lNode = Some(n)
     n.addParent( this )
   }
   def setR( n : Node ) = {
-    if ( rNode.isDefined )
+    if ( rNode.isDefined && lNode != rNode )
       rNode.get.removeParent( this )
+    println( this + ".setR( " + n + " )" )
     rNode = Some(n)
     n.addParent( this )
   }
   def getParents() = parents.toList
-  def addParent( n : Node ) = { parents += n }
-  def removeParent( n : Node ) = { parents -= n }
+  def addParent( n : Node ) = {
+    if( !hasParent(n) )
+      parents += n
+  }
+  def removeParent( n : Node ) = {
+    assert( hasParent(n), "Trying to remove non parent " + n )
+    parents -= n
+  }
   def hasParent( n : Node ) : Boolean = { parents.contains( n ) }
   def addUk( uki : Set[Vector[Int]] ) : Int = {
     if ( uki.isEmpty )
@@ -230,7 +261,7 @@ class Node( dim : Int, nodeSize : Int ) {
   }
 
   override def toString() : String = {
-    "Node@" + hashCode + "{ " + uk.toList + " } { " + getCk() + " }"
+    "Node@" + hashCode + "(" + letter() + ") { " + uk.toList + " } { " + getCk() + " }"
   }
 
   override def hashCode : Int = uk.hashCode + ck.hashCode
