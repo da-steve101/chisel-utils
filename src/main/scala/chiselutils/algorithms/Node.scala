@@ -8,6 +8,8 @@ import collection.mutable.ArrayBuffer
 
 object Node {
 
+  /** Look up an index with a mapping
+    */
   private def mapIdx( mapping : List[Int], idx : Int ) = {
     if ( idx == -1 )
       idx
@@ -15,12 +17,16 @@ object Node {
       mapping( idx )
   }
 
+  /** Create a node cp coords
+    */
   def apply( nodeVals : List[Set[Vector[Int]]] ) : Node = {
     val uk = nodeVals.distinct.filter( _.size != 0 )
     val ck = nodeVals.map( uk.indexOf( _ ) )
     apply( uk, ck )
   }
 
+  /** Create a node from compressed cp coords
+    */
   def apply( uk : List[Set[Vector[Int]]], ck : List[Int] ) : Node = {
     val dim = uk.head.iterator.next.size
     val nodeSize = ck.size
@@ -183,14 +189,12 @@ class Node( val dim : Int, val nodeSize : Int ) {
   def setL( n : Node ) = {
     if ( lNode.isDefined && lNode != rNode )
       lNode.get.removeParent( this )
-    println( this + ".setL( " + n + " )" )
     lNode = Some(n)
     n.addParent( this )
   }
   def setR( n : Node ) = {
     if ( rNode.isDefined && lNode != rNode )
       rNode.get.removeParent( this )
-    println( this + ".setR( " + n + " )" )
     rNode = Some(n)
     n.addParent( this )
   }

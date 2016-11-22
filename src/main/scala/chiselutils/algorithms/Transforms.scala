@@ -44,8 +44,6 @@ object Transforms {
     */
   def tryMerge( nA : Node , nB : Node ) : Option[Node] = {
 
-    println( "tryMerge nA = " + nA + ", nB = " + nB )
-
     // checkType
     if ( nA.isA() != nB.isA() || nA.isB() != nB.isB() || nA.isC() != nB.isC() )
       return None
@@ -84,9 +82,7 @@ object Transforms {
         nC.setR( nA.getR().get )
 
       // fix parent links
-      val parents = nA.getParents() ++ nB.getParents()
-      println( "parents = " + parents )
-      for ( p <- parents  ) {
+      for ( p <- nA.getParents() ++ nB.getParents() ) {
         if ( p.getL().isDefined && ( p.getL().get == nA || p.getL().get == nB ) )
           p.setL( nC )
         if ( p.getR().isDefined && ( p.getR().get == nA || p.getR().get == nB ) )
@@ -99,17 +95,16 @@ object Transforms {
     None
   }
 
+  /** Increment the integers in position 1 of vectors
+    */
   private def incr( uk : List[Set[Vector[Int]]] ) : List[Set[Vector[Int]]] = {
     uk.map( s => s.map( v => { Vector( v(0) + 1 ) ++ v.drop(1) }))
   }
 
-  private def rotateDown( ck : List[Int] ) : List[Int] = {
-    ck.takeRight( 1 ) ++ ck.dropRight( 1 )
-  }
-
+  /** Combine two uk/cks in an add
+    */
   private def combineAdd( uk1 : List[Set[Vector[Int]]], ck1 : List[Int],
     uk2 : List[Set[Vector[Int]]], ck2 : List[Int] ) : ( List[Set[Vector[Int]]], List[Int] ) = {
-    println( "try to combine " + uk1 + ", " + ck1 + " and " + uk2 + ", " + ck2 )
     val ckCombined = ck1.zip( ck2 )
     val uKidx = ckCombined.distinct.filter( _ != ( -1, -1 ) )
     val ckNew = ckCombined.map( uKidx.indexOf( _ ) )
@@ -118,6 +113,8 @@ object Transforms {
     ( ukNew, ckNew )
   }
 
+  /** Combine two uk/cks in a mux
+    */
   private def combineMux( uk1 : List[Set[Vector[Int]]], ck1 : List[Int],
     uk2 : List[Set[Vector[Int]]], ck2 : List[Int] ) : ( List[Set[Vector[Int]]], List[Int] ) = {
     val ukNew = (uk1 ++ uk2).distinct
@@ -138,6 +135,8 @@ object Transforms {
     ( ukNew, ckNew )
   }
 
+  /** pass ck through the ckFilter so that cks with other parents aren't included
+    */
   private def filterCk( ck : List[Int], ckFilter : List[Int] ) : List[Int] = {
     ckFilter.zip( ck ).map( cks => if ( cks._1 == -1 ) -1 else cks._2 )
   }
@@ -511,14 +510,9 @@ object Transforms {
 
   /** Look at two nodes and try to swap them
     */
-  def trySwap( nPar : Node, nSwap : Node, threshold : Double = 0.5 ) : List[Node] = {
-
-    println( "run trySwap" )
+  def trySwap( nPar : Node, nSwap : Node, applyIfIncrease : Boolean = true ) : List[Node] = {
 
     assert( nSwap.hasParent( nPar ), "For swap must have swap and parent node" )
-
-    // filter ops that increase cost with probablity
-    val applyOp = Random.nextDouble >= threshold
 
     if ( nSwap.isC() )
       return List[Node]()
@@ -526,9 +520,9 @@ object Transforms {
     // work out how nodes are connected ( should be directly )
     if ( nPar.isB() && nPar.getL() == nPar.getR() ) {
       if ( nSwap.isA() )
-        return { if ( applyOp ) swapCase1( nPar, nSwap ) else List[Node]() }
+        return { if ( applyIfIncrease ) swapCase1( nPar, nSwap ) else List[Node]() }
       if ( nSwap.isB() && nSwap.getL() != nSwap.getR() )
-        return { if ( applyOp ) swapCase2( nPar, nSwap ) else List[Node]() }
+        return { if ( applyIfIncrease ) swapCase2( nPar, nSwap ) else List[Node]() }
       return List[Node]() // case 3 which no point as changes nothing
     }
     val nOther = { if ( nPar.getL().get == nSwap ) nPar.getR().get else nPar.getL().get }
@@ -577,9 +571,7 @@ object Transforms {
     List[Node]()
   }
 
-  /** Try to split up a node into two
-    * Decide on which parent attaches to what?
-    * Randomally split?
+  /** Split a node and randomally assign its parents to each
     */
   def trySplit( nA : Node ) : List[Node] = {
     if ( nA.getParents().size <= 1 || nA.isC() )
@@ -666,6 +658,5 @@ object Transforms {
 
     return List( n1, n2 )
   }
-
 
 }

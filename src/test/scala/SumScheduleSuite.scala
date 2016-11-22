@@ -60,7 +60,6 @@ class SumScheduleSuite extends TestSuite {
     true
   }
 
-/*
   /** Test the sum constraint
     */
   @Test def testConstraintA {
@@ -164,7 +163,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintA( nodeSwap ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap, 0 )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
 
     assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
@@ -196,7 +195,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeSwap ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap, 0 )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
@@ -543,7 +542,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
     assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isB() )
   }
- */
+
   @Test def simpleGraph {
     val cp = List(
       Set( Vector( 5, 0 ), Vector( 4, 1 ) ),
@@ -575,8 +574,41 @@ class SumScheduleSuite extends TestSuite {
       }
 
       // overwrite each cycle to catch changes
-      nodes = AnnealingSolver.applyOperation( nodes, i.toDouble/100 )
+      val applyIfIncrease = Random.nextDouble >= i.toDouble/100 
+      nodes = AnnealingSolver.applyOperation( nodes, applyIfIncrease )
     }
+  }
+
+  @Test def conv3n5 {
+    val imgSize = 5
+    val filterSize = 3
+    val cpCoords = ( 0 until imgSize ).map( x => {
+      (0 until imgSize).map( y => {
+        val cycIn = x*imgSize + y
+        ( 0 until filterSize ).map( fx => {
+          ( 0 until filterSize ).map( fy => {
+            val fxShift = (fx - ( filterSize/2 ))*imgSize
+            val fyShift = (fy - ( filterSize/2 ))
+            ( fxShift, fyShift, fx*filterSize + fy )
+          })
+        }).reduce( _ ++ _ ).filter( f => {
+          f._1 >= 0 && f._1 <= imgSize && f._2 >= 0 && f._2 <= imgSize
+        }).map( f => {
+          Vector( -(cycIn + f._1 + f._2), f._3 )
+        }).toSet
+      }).toList
+    }).reduce( _ ++ _ )
+    val latAdd = AnnealingSolver.needLatency( List( cpCoords ) )
+    val cp = cpCoords.map( cSet => {
+      cSet.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) })
+    })
+    var nodes = AnnealingSolver.init( List( cp ) )._1
+    nodes = AnnealingSolver.run( nodes, 100000000 )
+    assert( testLinks( nodes ), "Nodes must be connected properly" )
+    for ( n <- nodes )
+      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
+    AnnealingSolver.toDot( nodes, "conv3n5.dot" )
+    println( "cost = " + nodes.size )
   }
 
 }

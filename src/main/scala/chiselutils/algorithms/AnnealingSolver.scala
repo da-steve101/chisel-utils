@@ -176,6 +176,15 @@ object AnnealingSolver {
     ( lSide._1 ++ rSide._1 ++ allNodes, lSide._2 ++ rSide._2 )
   }
 
+  def needLatency( cp : List[List[Set[Vector[Int]]]] ) : Int = {
+    val cpRemaining = cp.map( cList => {
+      cycRemaining( cList.map( cSet => {
+        cycRemaining( cSet.toList.map( v => v(0) ) )
+      }))
+    })
+    -cpRemaining.min
+  }
+
   /** Create the initial map from cp coords
     * Does the very naive thing of all mux then adder tree
     * Returns ( All the nodes, the parent nodes, the termination nodes )
@@ -193,10 +202,9 @@ object AnnealingSolver {
     }).reduce( (x,y) => ( x._1 ++ y._1, x._2 ++ y._2 ) )
     val mergedRes = cMerge( addRes._1 )
     ( mergedRes._1, parentNodes, mergedRes._2 )
-    // ( addRes._1, parentNodes, addRes._2 )
   }
 
-  def applyOperation( nodes : HashSet[Node], threshold : Double = 0.5 ) : HashSet[Node] = {
+  def applyOperation( nodes : HashSet[Node], applyIfIncrease : Boolean ) : HashSet[Node] = {
 
     println( "run applyOperation" )
 
@@ -210,18 +218,8 @@ object AnnealingSolver {
 
     assert( node.isA() || node.isB(), "Cannot operate on termination node" )
 
-    println( "choose node " + node + " is " + {
-      if ( node.isA() )
-        "A"
-      else
-        "B"
-    })
-
     // choose an operation to try and apply
     val chooseMerge = Random.nextInt( 2 ) == 0
-
-    println( "node.getL() = " + node.getL() )
-    println( "node.getR() = " + node.getR() )
 
     val chooseL = Random.nextInt( 2 ) == 0
 
@@ -233,15 +231,12 @@ object AnnealingSolver {
     }
 
     if ( chooseMerge ) {
+      println( "Perform merge" )
       val parents = nSwap.getParents()
-      println( "nSwap.parents = " + parents )
       val selNode = parents.find( p => p != node && p.getL() == node.getL() && p.getR() == node.getR() )
       if ( !selNode.isDefined )
         return nodes
 
-      println( "Perform merge" )
-      println( "node.getL().get.getParents() = " + node.getL().get.getParents() )
-      println( "node.getR().get.getParents() = " + node.getR().get.getParents() )
       assert( nodes.contains( selNode.get ), "Selected node " + selNode.get + " not in map" )
       // perform it with some probability if it increases the cost
       val res = Transforms.tryMerge( node, selNode.get )
@@ -270,8 +265,7 @@ object AnnealingSolver {
 
     if ( nSwap.getParents().size > 1 || nOther.getParents.size > 1 ) {
       println( "Perform split" )
-      val applyOp = Random.nextDouble >= threshold
-      if ( !applyOp )
+      if ( !applyIfIncrease )
         return nodes
       val nodeToSplit = {
         if ( nSwap.getParents().size > 1 )
@@ -295,7 +289,7 @@ object AnnealingSolver {
 
     println( "Perform swap" )
     // else swap
-    val res = Transforms.trySwap( node, nSwap, threshold )
+    val res = Transforms.trySwap( node, nSwap, applyIfIncrease )
     if ( res.size == 0 )
       return nodes
 
@@ -310,6 +304,23 @@ object AnnealingSolver {
       nOther.getR().get.removeParent( nOther )
 
     ( ( nodes - nSwap ) - nOther ) ++ res
+  }
+
+  def run( nodesIn : HashSet[Node], iter : Int ) : HashSet[Node] = {
+    var nodes = nodesIn
+    for ( i <- 0 until iter ) {
+      // decay the likelihood of performing an operation that makes the solution worse
+      val A = math.log( 0.01 )/iter.toDouble
+      val threshold = 1 - math.exp( A*i/iter.toDouble )
+      val applyIfIncrease = Random.nextDouble >= threshold
+      nodes = applyOperation( nodes, applyIfIncrease )
+    }
+
+    // run a merge on all nodes here?
+
+    // look at dropping latency if possible?
+
+    nodes
   }
 
   /** Convert the node set to a .dot graph file
