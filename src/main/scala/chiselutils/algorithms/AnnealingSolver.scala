@@ -206,8 +206,6 @@ object AnnealingSolver {
 
   def applyOperation( nodes : HashSet[Node], applyIfIncrease : Boolean ) : HashSet[Node] = {
 
-    println( "run applyOperation" )
-
     // pick a node randomally
     val n = Random.nextInt(nodes.size)
     val it = nodes.iterator.drop(n)
@@ -231,7 +229,6 @@ object AnnealingSolver {
     }
 
     if ( chooseMerge ) {
-      println( "Perform merge" )
       val parents = nSwap.getParents()
       val selNode = parents.find( p => p != node && p.getL() == node.getL() && p.getR() == node.getR() )
       if ( !selNode.isDefined )
@@ -264,7 +261,6 @@ object AnnealingSolver {
     }
 
     if ( nSwap.getParents().size > 1 || nOther.getParents.size > 1 ) {
-      println( "Perform split" )
       if ( !applyIfIncrease )
         return nodes
       val nodeToSplit = {
@@ -287,7 +283,6 @@ object AnnealingSolver {
       return nodes
     }
 
-    println( "Perform swap" )
     // else swap
     val res = Transforms.trySwap( node, nSwap, applyIfIncrease )
     if ( res.size == 0 )
@@ -308,11 +303,15 @@ object AnnealingSolver {
 
   def run( nodesIn : HashSet[Node], iter : Int ) : HashSet[Node] = {
     var nodes = nodesIn
+    val iterDub = iter.toDouble
+    val iterPer = 100/iterDub
+    val A = math.log( 0.01 )/iterDub
     for ( i <- 0 until iter ) {
       // decay the likelihood of performing an operation that makes the solution worse
-      val A = math.log( 0.01 )/iter.toDouble
-      val threshold = 1 - math.exp( A*i/iter.toDouble )
+      val threshold = (1 - math.exp( A*i ))/0.99
       val applyIfIncrease = Random.nextDouble >= threshold
+      if ( (i % 100000) == 0 )
+        println( "progress = " + (i*iterPer ) + "%, threshold = " + threshold + ", cost = " + nodes.size )
       nodes = applyOperation( nodes, applyIfIncrease )
     }
 

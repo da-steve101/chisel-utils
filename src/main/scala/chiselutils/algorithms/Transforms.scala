@@ -153,7 +153,6 @@ object Transforms {
     * nodeB.rNode = nSwap.rNode
     */
   private def swapCase1( nPar : Node, nSwap : Node ) : List[Node] = {
-    println( "swapCase1" )
     val nodeAuK = nSwap.getL().get.getUkNext()
     val nodeAcK = nSwap.getL().get.getCkNext()
     val nodeAcKFiltered = nodeAcK.zip( nSwap.getCk() ).map( z => if ( z._2 == -1 ) -1 else z._1 )
@@ -189,7 +188,6 @@ object Transforms {
     * nodeB.rNode = nSwap.rNode
     */
   private def swapCase2( nPar : Node, nSwap : Node ) : List[Node] = {
-    println( "swapCase2" )
     val nodeList = swapCase1( nPar, nSwap ) // same as nPar holds the add/mux info
     nPar.setB()
     nodeList
@@ -208,7 +206,6 @@ object Transforms {
     * nodeB.rNode = nOther.rNode
     */
   private def swapCase4( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
-    println( "swapCase4" )
 
     // nSwap must be the reg by itself
     // rotate so that nOther.rNode + nSwap.lNode and nOther.lNode is reg
@@ -251,7 +248,6 @@ object Transforms {
     * nodeB.rNode = nOther.rNode
     */
   private def swapCase5( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
-    println( "swapCase5" )
     val otherLFiltered = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otherRFiltered = filterCk( nOther.getR().get.getCkNext(), nOther.getCk() )
     val swapLFiltered = filterCk( nSwap.getL().get.getCkNext(), nSwap.getCk() )
@@ -288,7 +284,6 @@ object Transforms {
     * nodeA.rNode = nOther.lNode
     */
   private def swapCase6( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
-    println( "swapCase6" )
 
     val othercK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otheruK = nOther.getL().get.getUkNext()
@@ -319,7 +314,6 @@ object Transforms {
     * nodeB.rNode = nOther.rNode
     */
   private def swapCase7( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
-    println( "swapCase7" )
 
     val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otherLuK = nOther.getL().get.getUkNext()
@@ -328,8 +322,6 @@ object Transforms {
     val swapcKL = filterCk( nSwap.getCk(), otherLcK )
     val swapcKR = filterCk( nSwap.getCk(), otherRcK )
     val swapuK = nSwap.getUk()
-    println( "swapCase7: nSwap = " + nSwap )
-    println( "swapCase7: nOther = " + nOther )
     val combAddL = combineAdd( otherLuK, otherLcK, swapuK, swapcKL )
     val combAddR = combineAdd( otherRuK, otherRcK, swapuK, swapcKR )
     val nodeA = Node( combAddL._1, combAddL._2 )
@@ -358,7 +350,7 @@ object Transforms {
     * nodeA.rNode = nOther.lNode
     */
   private def swapCase10( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
-    println( "swapCase10" )
+
     val othercK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otheruK = nOther.getL().get.getUkNext()
     val swapcK = filterCk( nSwap.getL().get.getCkNext(), nSwap.getCk() )
@@ -387,7 +379,7 @@ object Transforms {
     * nodeB.lNode = nOther.rNode
     */
   private def swapCase11( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
-    println( "swapCase11" )
+
     // find common
     val swapLOtherL = nSwap.getL().get == nOther.getL().get
     val swapLOtherR = nSwap.getL().get == nOther.getR().get
@@ -446,7 +438,7 @@ object Transforms {
     * nodeB.rNode = nOther.rNode
     */
   private def swapCase12( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
-    println( "swapCase12" )
+
     val otherLFiltered = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otherRFiltered = filterCk( nOther.getR().get.getCkNext(), nOther.getCk() )
     val swapLFiltered = filterCk( nSwap.getL().get.getCkNext(), nSwap.getCk() )
@@ -482,7 +474,7 @@ object Transforms {
     * nodeB.rNode = nSwap.lNode
     */
   private def swapCase13( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
-    println( "swapCase13" )
+
     val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otherLuK = nOther.getL().get.getUkNext()
     val nodeA = Node( otherLuK, otherLcK )

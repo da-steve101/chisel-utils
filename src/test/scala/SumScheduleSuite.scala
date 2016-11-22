@@ -60,6 +60,32 @@ class SumScheduleSuite extends TestSuite {
     true
   }
 
+  def getConvSums( imgSize : Int, filterSize : Int ) : List[Set[Vector[Int]]] = {
+    // no padding, 1 filter
+    // stream pixel by pixel
+    // only odd filter
+    // need to flip
+    // input is 3 by 3 => positions 0 to 8
+    // columns are x, rows are y
+    val positions = ( 0 until filterSize*filterSize )
+    val outSums = ( 0 until imgSize ).map( y => {
+      ( 0 until imgSize ).map( x => {
+        positions.map( p => {
+          val px = ( p % filterSize ) - ( filterSize / 2 )
+          val py = ( p / filterSize ) - ( filterSize / 2 )
+          val xpx = x + px
+          val ypy = y + py
+          ( xpx, ypy, p )
+        }).filter { case ( xpx, ypy, p ) => {
+          ( xpx >= 0 && xpx < imgSize && ypy >= 0 && ypy < imgSize )
+        }}.map { case ( xpx, ypy, p ) => {
+          Vector( ypy*imgSize + xpx, p )
+        }}.toSet
+      })
+    }).reduce( _ ++ _ ).toList
+    outSums
+  }
+
   /** Test the sum constraint
     */
   @Test def testConstraintA {
@@ -582,28 +608,18 @@ class SumScheduleSuite extends TestSuite {
   @Test def conv3n5 {
     val imgSize = 5
     val filterSize = 3
-    val cpCoords = ( 0 until imgSize ).map( x => {
-      (0 until imgSize).map( y => {
-        val cycIn = x*imgSize + y
-        ( 0 until filterSize ).map( fx => {
-          ( 0 until filterSize ).map( fy => {
-            val fxShift = (fx - ( filterSize/2 ))*imgSize
-            val fyShift = (fy - ( filterSize/2 ))
-            ( fxShift, fyShift, fx*filterSize + fy )
-          })
-        }).reduce( _ ++ _ ).filter( f => {
-          f._1 >= 0 && f._1 <= imgSize && f._2 >= 0 && f._2 <= imgSize
-        }).map( f => {
-          Vector( -(cycIn + f._1 + f._2), f._3 )
-        }).toSet
-      }).toList
-    }).reduce( _ ++ _ )
-    val latAdd = AnnealingSolver.needLatency( List( cpCoords ) )
-    val cp = cpCoords.map( cSet => {
-      cSet.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) })
+    val cpCoords = getConvSums( imgSize, filterSize ).zipWithIndex.map( cSet => {
+      cSet._1.map( v => Vector( cSet._2 - v(0)) ++ v.drop(1) )
     })
+    println( "cpCoords = " + cpCoords )
+    val latAdd = AnnealingSolver.needLatency( List( cpCoords ) )
+    println( "latAdd = " + latAdd )
+    val cp = cpCoords.zipWithIndex.map( cSet => {
+      cSet._1.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) })
+    })
+    println( "cp = " + cp )
     var nodes = AnnealingSolver.init( List( cp ) )._1
-    nodes = AnnealingSolver.run( nodes, 100000000 )
+    nodes = AnnealingSolver.run( nodes, 10000000 )
     assert( testLinks( nodes ), "Nodes must be connected properly" )
     for ( n <- nodes )
       assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
