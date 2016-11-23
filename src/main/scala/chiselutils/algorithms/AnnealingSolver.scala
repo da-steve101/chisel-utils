@@ -206,34 +206,34 @@ object AnnealingSolver {
     ( mergedRes._1, parentNodes, mergedRes._2 )
   }
 
-  private def lockNodes( nodesIn : List[Node], alreadyLocked : List[Node] ) : (Boolean, List[Node]) = {
-    val nodesLocked = ArrayBuffer[Node]()
+  private def lockNodes( nodesIn : List[Node], alreadyLocked : Set[Node] ) : (Boolean, Set[Node]) = {
+    val nodesLocked = collection.mutable.Set[Node]()
     // lock parents of node
     for( p <- nodesIn) {
       if ( !alreadyLocked.contains( p ) && !nodesLocked.contains(p) ) {
         val lockRes = p.lockNode()
         if ( !lockRes ) {
           nodesLocked.map( n => n.unlockNode() )
-          return (false, List[Node]() )
+          return (false, Set[Node]() )
         }
         nodesLocked += p
       }
     }
-    return ( true, nodesLocked.toList )
+    return ( true, nodesLocked.toSet )
   }
 
   /** Lock nodes needed
     * Need to lock in order to ensure that the node cant change
     */
-  private def acquireLocks( node : Node ) : (Boolean, List[Node]) = {
+  private def acquireLocks( node : Node ) : (Boolean, Set[Node]) = {
     if ( node.isC() )
-      return ( false, List[Node]() )
+      return ( false, Set[Node]() )
     assert( node.getL().isDefined && node.getR().isDefined )
     val lockRes = node.lockNode()
     if ( !lockRes )
-      return (false, List[Node]())
+      return (false, Set[Node]())
 
-    val nodesLocked = ArrayBuffer[Node]()
+    val nodesLocked = collection.mutable.Set[Node]()
     nodesLocked += node
 
     // lock L
@@ -241,7 +241,7 @@ object AnnealingSolver {
     val lockLRes = nodeL.lockNode()
     if ( !lockLRes ) {
       nodesLocked.map( n => n.unlockNode() )
-      return (false, List[Node]())
+      return (false, Set[Node]())
     }
     nodesLocked += nodeL
 
@@ -251,7 +251,7 @@ object AnnealingSolver {
       val lockRRes = nodeR.lockNode()
       if ( !lockRRes ) {
         nodesLocked.map( n => n.unlockNode() )
-        return (false, List[Node]())
+        return (false, Set[Node]())
       }
       nodesLocked += nodeR
     }
@@ -262,7 +262,7 @@ object AnnealingSolver {
         val lockLLRes = nodeL.getL().get.lockNode()
         if ( !lockLLRes ) {
           nodesLocked.map( n => n.unlockNode() )
-          return (false, List[Node]())
+          return (false, Set[Node]())
         }
         nodesLocked += nodeL.getL().get
       }
@@ -274,7 +274,7 @@ object AnnealingSolver {
         val lockLRRes = nodeL.getR().get.lockNode()
         if ( !lockLRRes ) {
           nodesLocked.map( n => n.unlockNode() )
-          return (false, List[Node]())
+          return (false, Set[Node]())
         }
         nodesLocked += nodeL.getR().get
       }
@@ -286,7 +286,7 @@ object AnnealingSolver {
         val lockRLRes = nodeR.getL().get.lockNode()
         if ( !lockRLRes ) {
           nodesLocked.map( n => n.unlockNode() )
-          return (false, List[Node]())
+          return (false, Set[Node]())
         }
         nodesLocked += nodeR.getL().get
       }
@@ -298,21 +298,21 @@ object AnnealingSolver {
         val lockRRRes = nodeR.getR().get.lockNode()
         if ( !lockRRRes ) {
           nodesLocked.map( n => n.unlockNode() )
-          return (false, List[Node]())
+          return (false, Set[Node]())
         }
         nodesLocked += nodeR.getR().get
       }
     }
 
     // lock parents of node
-    val lockPar = lockNodes( node.getParents() ++ nodeL.getParents() ++ nodeR.getParents(), nodesLocked.toList )
+    val lockPar = lockNodes( node.getParents() ++ nodeL.getParents() ++ nodeR.getParents(), nodesLocked.toSet )
     if ( !lockPar._1 ) {
         nodesLocked.map( n => n.unlockNode() )
-        return (false, List[Node]())
+        return (false, Set[Node]())
     }
     nodesLocked ++= lockPar._2
 
-    (true, nodesLocked.toList)
+    (true, nodesLocked.toSet)
   }
 
   def performMerge( nA : Node, nB : Node ) : Option[Node] = {
@@ -498,6 +498,7 @@ object AnnealingSolver {
           val lockRes = acquireLocks( node )
           ( node, lockRes )
         }
+
         val node = tmpSync._1
         val lockRes = tmpSync._2
 
