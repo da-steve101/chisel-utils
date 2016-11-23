@@ -31,13 +31,12 @@ object Node {
   def apply( uk : List[Set[Vector[Int]]], ck : List[Int] ) : Node = {
     val dim = uk.head.iterator.next.size
     val nodeSize = ck.size
-    val n = new Node( dim, nodeSize )
+    // ensure uk is sorted
     val ukSorted = uk.zipWithIndex.sortBy( _._1.hashCode )
     val mapping = ukSorted.map( _._2 ).zipWithIndex.sortBy( _._1 ).map( _._2 )
-    for ( uki <- ukSorted )
-      assert( n.addUk( uki._1 ) != -1, "Could not add empty uk, invalid arguments" )
-    for ( cki <- ck.zipWithIndex )
-      n.setCki( cki._2, mapIdx( mapping, cki._1 ) )
+    val ukOut = ukSorted.map( _._1 )
+    val ckOut = ck.map( cki => mapIdx( mapping, cki ) )
+    val n = new Node( dim, nodeSize, ukOut, ckOut )
     n
   }
 
@@ -125,7 +124,7 @@ object Node {
 
 }
 
-class Node( val dim : Int, val nodeSize : Int ) {
+class Node( val dim : Int, val nodeSize : Int, uk : List[Set[Vector[Int]]], ck : List[Int] ) {
 
   assert( dim >= 1, "The dimension of p must be atleast 1" )
 
@@ -134,11 +133,6 @@ class Node( val dim : Int, val nodeSize : Int ) {
   private val parents = ArrayBuffer[Node]()
   private var nodeType = -1
   private val available = new AtomicBoolean();
-
-  // the unique sets in this Node, is sorted by hashcode
-  private val uk = ArrayBuffer[Set[Vector[Int]]]()
-  // the order in which the unique sets are, -1 indicates an empty set
-  private val ck = ArrayBuffer.fill( nodeSize ){ -1 }
 
   def getModIdx( i : Int ) : Int = { ck( ( i + nodeSize - 1 ) % nodeSize ) }
   def getModSet( i : Int ) : Set[Vector[Int]] = {
@@ -187,10 +181,6 @@ class Node( val dim : Int, val nodeSize : Int ) {
     uk( i )
   }
   def getCki( i : Int ) : Set[Vector[Int]] = getUki( ck( i ) )
-  def setCki( i : Int, ukIdx : Int ) : Unit = {
-    assert( ck( i ) == -1, "Can only set if cki is -1" )
-    ck( i ) = ukIdx
-  }
 
   def getUk() = uk.toList
   def getUkPrev() = { uk.toList.map( uki => uki.map( v => { Vector( v(0) - 1 ) ++ v.drop(1) })) }
@@ -219,26 +209,6 @@ class Node( val dim : Int, val nodeSize : Int ) {
     parents -= n
   }
   def hasParent( n : Node ) : Boolean = { parents.contains( n ) }
-  def addUk( uki : Set[Vector[Int]] ) : Int = {
-    if ( uki.isEmpty )
-      return -1
-    // insert into uK using binary insertion on hashcode
-    val hC = uki.hashCode
-    var lIdx = 0
-    var rIdx = uk.size
-    while ( lIdx < rIdx ) {
-      val mid = ( lIdx + rIdx ) >> 1
-      val midHc = uk(mid).hashCode
-      if ( midHc == hC )
-        return mid
-      if ( midHc < hC )
-        lIdx = mid + 1
-      else
-        rIdx = mid - 1
-    }
-    uk.insert( lIdx, uki )
-    lIdx
-  }
 
   /** Returns if cki = ( incr( c_(l,i-1%n) U c_(r,i-1%n) )
     */
