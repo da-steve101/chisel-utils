@@ -130,7 +130,7 @@ class Node( val dim : Int, val nodeSize : Int, uk : List[Set[Vector[Int]]], ck :
 
   private var lNode : Option[Node] = None
   private var rNode : Option[Node] = None
-  private val parents = ArrayBuffer[Node]()
+  private val parents = collection.mutable.Set[Node]()
   private var nodeType = -1
   private val available = new AtomicBoolean();
 
@@ -201,8 +201,7 @@ class Node( val dim : Int, val nodeSize : Int, uk : List[Set[Vector[Int]]], ck :
   }
   def getParents() = parents.toList
   def addParent( n : Node ) = {
-    if( !hasParent(n) )
-      parents += n
+    parents += n
   }
   def removeParent( n : Node ) = {
     assert( hasParent(n), "Trying to remove non parent " + n )
@@ -249,7 +248,7 @@ class Node( val dim : Int, val nodeSize : Int, uk : List[Set[Vector[Int]]], ck :
     "Node@" + hashCode + "(" + letter() + ") { " + uk.toList + " } { " + getCk() + " }"
   }
 
-  override def hashCode : Int = uk.hashCode + ck.hashCode
+  override lazy val hashCode : Int = uk.hashCode + ck.hashCode
 
   override def equals( that : Any ) : Boolean = that match {
     case n : Node => { n.hashCode == hashCode }
