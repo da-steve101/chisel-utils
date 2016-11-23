@@ -496,10 +496,6 @@ object AnnealingSolver {
           val it = nodes.iterator.drop(nRand)
           val node = it.next
           val lockRes = acquireLocks( node )
-          for ( n <- lockRes._2 ) {
-            n.setLockBy( j )
-            assert( nodes.contains( n ), "locked nodes should be in hashset but " + n + " wasn't" )
-          }
           ( node, lockRes )
         }
         val node = tmpSync._1
@@ -528,15 +524,12 @@ object AnnealingSolver {
               // lock selected node parents too ... filter out already locked via other
               val selPar = selNode.get.getParents().filterNot( n => lockRes._2.contains( n ) )
               val parLocks = lockNodes( selPar, lockRes._2 )
-              for ( n <- parLocks._2 )
-                n.setLockBy( j )
               if ( parLocks._1 ) {
                 // perform it with some probability if it increases the cost
                 val res = performMerge( node, selNode.get )
                 if ( res.isDefined ) {
                   assert( node.isLocked() && selNode.get.isLocked(), "Should be removing locked nodes" )
                   assert( lockRes._2.contains( node ) && lockRes._2.contains( selNode.get ), "Should hold locks" )
-                  assert( node.getLockBy() == j && selNode.get.getLockBy() == j, "Must be node owner")
                   assert( !nodes.contains( res.get ), "Adding node already in?" )
                   nodes.synchronized {
                     nodes -= node
@@ -571,7 +564,6 @@ object AnnealingSolver {
                   assert( nodeToSplit.isLocked(), "Should be removing locked nodes" )
                   assert( lockRes._2.contains( nodeToSplit ), "Should hold locks" )
                   assert( !nodeList.find( nodes.contains( _ ) ).isDefined, "Adding node already in?" )
-                  assert( nodeToSplit.getLockBy() == j, "Must be node owner")
                   nodes.synchronized {
                     nodes -= nodeToSplit
                     nodes ++= nodeList
@@ -587,7 +579,6 @@ object AnnealingSolver {
                 assert( lockRes._2.contains( nSwap ) && lockRes._2.contains( nOther ), "Should hold locks" )
                 val repNode = res.drop(1).find( nodes.contains( _ ) )
                 assert( !repNode.isDefined, "Adding " + repNode + " already in?" )
-                assert( nSwap.getLockBy() == j && nOther.getLockBy() == j, "Must be node owner")
                 nodes.synchronized {
                   nodes -= nSwap
                   nodes -= nOther

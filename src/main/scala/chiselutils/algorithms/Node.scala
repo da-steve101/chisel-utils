@@ -135,13 +135,6 @@ class Node( val dim : Int, val nodeSize : Int ) {
   private var nodeType = -1
   private val available = new AtomicBoolean();
 
-  private var lockBy = new java.util.concurrent.atomic.AtomicInteger()
-  def setLockBy( x : Int ) = {
-    assert( lockBy.getAndSet(x) == -1, "Trying to steal a lock" )
-  }
-  def getLockBy() = lockBy.get()
-  def resetLockBy() = { lockBy.set(-1) }
-
   // the unique sets in this Node, is sorted by hashcode
   private val uk = ArrayBuffer[Set[Vector[Int]]]()
   // the order in which the unique sets are, -1 indicates an empty set
@@ -162,7 +155,6 @@ class Node( val dim : Int, val nodeSize : Int ) {
   def isLocked() = !available.get()
   def unlockNode() = {
     assert( isLocked(), "Trying to unlock available node" )
-    resetLockBy()
     available.set( true )
   }
   def lockNode() = {
