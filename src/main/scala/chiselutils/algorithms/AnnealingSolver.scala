@@ -201,7 +201,172 @@ object AnnealingSolver {
       ( ap._1 ++ n._1, ap._2 )
     }).reduce( (x,y) => ( x._1 ++ y._1, x._2 ++ y._2 ) )
     val mergedRes = cMerge( addRes._1 )
+    for ( n <- mergedRes._1 )
+      n.unlockNode()
     ( mergedRes._1, parentNodes, mergedRes._2 )
+  }
+
+  private def lockNodes( nodesIn : List[Node], alreadyLocked : List[Node] ) : (Boolean, List[Node]) = {
+    val nodesLocked = ArrayBuffer[Node]()
+    // lock parents of node
+    for( p <- nodesIn) {
+      if ( !alreadyLocked.contains( p ) && !nodesLocked.contains(p) ) {
+        val lockRes = p.lockNode()
+        if ( !lockRes ) {
+          nodesLocked.map( n => n.unlockNode() )
+          return (false, List[Node]() )
+        }
+        nodesLocked += p
+      }
+    }
+    return ( true, nodesLocked.toList )
+  }
+
+  /** Lock nodes needed
+    * Need to lock in order to ensure that the node cant change
+    */
+  private def acquireLocks( node : Node ) : (Boolean, List[Node]) = {
+    if ( node.isC() )
+      return ( false, List[Node]() )
+    assert( node.getL().isDefined && node.getR().isDefined )
+    val lockRes = node.lockNode()
+    if ( !lockRes )
+      return (false, List[Node]())
+
+    val nodesLocked = ArrayBuffer[Node]()
+    nodesLocked += node
+
+    // lock L
+    val nodeL = node.getL().get
+    val lockLRes = nodeL.lockNode()
+    if ( !lockLRes ) {
+      nodesLocked.map( n => n.unlockNode() )
+      return (false, List[Node]())
+    }
+    nodesLocked += nodeL
+
+    // lock R
+    val nodeR = node.getR().get
+    if ( !nodesLocked.contains(nodeR) ) {
+      val lockRRes = nodeR.lockNode()
+      if ( !lockRRes ) {
+        nodesLocked.map( n => n.unlockNode() )
+        return (false, List[Node]())
+      }
+      nodesLocked += nodeR
+    }
+
+    // lock L of nodeL
+    if ( nodeL.getL().isDefined ) {
+      if ( !nodesLocked.contains(nodeL.getL().get) ) {
+        val lockLLRes = nodeL.getL().get.lockNode()
+        if ( !lockLLRes ) {
+          nodesLocked.map( n => n.unlockNode() )
+          return (false, List[Node]())
+        }
+        nodesLocked += nodeL.getL().get
+      }
+    }
+
+    // lock R of nodeL
+    if ( nodeL.getR().isDefined ) {
+      if ( !nodesLocked.contains(nodeL.getR().get) ) {
+        val lockLRRes = nodeL.getR().get.lockNode()
+        if ( !lockLRRes ) {
+          nodesLocked.map( n => n.unlockNode() )
+          return (false, List[Node]())
+        }
+        nodesLocked += nodeL.getR().get
+      }
+    }
+
+    // lock L of nodeR
+    if ( nodeR.getL().isDefined ) {
+      if ( !nodesLocked.contains(nodeR.getL().get) ) {
+        val lockRLRes = nodeR.getL().get.lockNode()
+        if ( !lockRLRes ) {
+          nodesLocked.map( n => n.unlockNode() )
+          return (false, List[Node]())
+        }
+        nodesLocked += nodeR.getL().get
+      }
+    }
+
+    // lock R of nodeR
+    if ( nodeR.getR().isDefined ) {
+      if ( !nodesLocked.contains(nodeR.getR().get) ) {
+        val lockRRRes = nodeR.getR().get.lockNode()
+        if ( !lockRRRes ) {
+          nodesLocked.map( n => n.unlockNode() )
+          return (false, List[Node]())
+        }
+        nodesLocked += nodeR.getR().get
+      }
+    }
+
+    // lock parents of node
+    val lockPar = lockNodes( node.getParents() ++ nodeL.getParents() ++ nodeR.getParents(), nodesLocked.toList )
+    if ( !lockPar._1 ) {
+        nodesLocked.map( n => n.unlockNode() )
+        return (false, List[Node]())
+    }
+    nodesLocked ++= lockPar._2
+
+    (true, nodesLocked.toList)
+  }
+
+  def performMerge( nA : Node, nB : Node ) : Option[Node] = {
+
+    val res = Transforms.tryMerge( nA, nB )
+    if ( !res.isDefined )
+      return res
+
+    // clean up parents of merged nodes
+    if ( nA.getL().isDefined )
+      nA.getL().get.removeParent( nA )
+    if ( nA.getR().isDefined && nA.getR() != nA.getL() )
+      nA.getR().get.removeParent( nA )
+    if ( nB.getL().isDefined )
+      nB.getL().get.removeParent( nB )
+    if ( nB.getR().isDefined && nB.getR() != nB.getL() )
+      nB.getR().get.removeParent( nB )
+
+    res
+  }
+
+  def performSplit( nodeToSplit : Node ) : List[Node] = {
+
+    val nodeList = Transforms.trySplit( nodeToSplit )
+
+    // add new nodes and remove old one
+    if ( nodeList.size > 0 ) {
+      // clean up parents of merged nodes
+      if ( nodeToSplit.getL().isDefined )
+        nodeToSplit.getL().get.removeParent( nodeToSplit )
+      if ( nodeToSplit.getR().isDefined && nodeToSplit.getR() != nodeToSplit.getL() )
+        nodeToSplit.getR().get.removeParent( nodeToSplit )
+    }
+
+    nodeList
+  }
+
+  def performSwap( node : Node, nSwap : Node, nOther : Node, applyIfIncrease : Boolean ) : List[Node] = {
+
+    val res = Transforms.trySwap( node, nSwap, applyIfIncrease )
+    if ( res.size == 0 )
+      return res
+
+    // clean up parents of merged nodes
+    if ( nSwap.getL().isDefined )
+      nSwap.getL().get.removeParent( nSwap )
+    if ( nSwap.getR().isDefined && nSwap.getR() != nSwap.getL() )
+      nSwap.getR().get.removeParent( nSwap )
+    if ( nOther != nSwap && nOther.getL().isDefined )
+      nOther.getL().get.removeParent( nOther )
+    if ( nOther != nSwap && nOther.getR().isDefined && nOther.getR() != nOther.getL() )
+      nOther.getR().get.removeParent( nOther )
+
+    res
   }
 
   def applyOperation( nodes : HashSet[Node], applyIfIncrease : Boolean ) : HashSet[Node] = {
@@ -230,25 +395,18 @@ object AnnealingSolver {
 
     if ( chooseMerge ) {
       val parents = nSwap.getParents()
-      val selNode = parents.find( p => p != node && p.getL() == node.getL() && p.getR() == node.getR() )
+      val selNode = parents.find( p => p != node && {
+        ( p.getL() == node.getL() && p.getR() == node.getR() ) ||
+        ( p.getL() == node.getR() && p.getR() == node.getL() )
+      })
       if ( !selNode.isDefined )
         return nodes
 
       assert( nodes.contains( selNode.get ), "Selected node " + selNode.get + " not in map" )
       // perform it with some probability if it increases the cost
-      val res = Transforms.tryMerge( node, selNode.get )
+      val res = performMerge( node, selNode.get )
       if ( !res.isDefined )
         return nodes
-
-      // clean up parents of merged nodes
-      if ( node.getL().isDefined )
-        node.getL().get.removeParent( node )
-      if ( node.getR().isDefined && node.getR() != node.getL() )
-        node.getR().get.removeParent( node )
-      if ( selNode.get.getL().isDefined )
-        selNode.get.getL().get.removeParent( selNode.get )
-      if ( selNode.get.getR().isDefined && selNode.get.getR() != selNode.get.getL() )
-        selNode.get.getR().get.removeParent( selNode.get )
 
       return ( ( nodes - node ) - selNode.get ) + res.get
     }
@@ -269,34 +427,17 @@ object AnnealingSolver {
         else
           nOther
       }
-      val nodeList = Transforms.trySplit( nodeToSplit )
+      val nodeList = performSplit( nodeToSplit )
+      if ( nodeList.size == 0 )
+        return nodes
 
-      // add new nodes and remove old one
-      if ( nodeList.size > 0 ) {
-        // clean up parents of merged nodes
-        if ( nodeToSplit.getL().isDefined )
-          nodeToSplit.getL().get.removeParent( nodeToSplit )
-        if ( nodeToSplit.getR().isDefined && nodeToSplit.getR() != nodeToSplit.getL() )
-          nodeToSplit.getR().get.removeParent( nodeToSplit )
-        return ( nodes - nodeToSplit ) ++ nodeList
-      }
-      return nodes
+      return ( nodes - nodeToSplit ) ++ nodeList
     }
 
     // else swap
-    val res = Transforms.trySwap( node, nSwap, applyIfIncrease )
+    val res = performSwap( node, nSwap, nOther, applyIfIncrease )
     if ( res.size == 0 )
       return nodes
-
-    // clean up parents of merged nodes
-    if ( nSwap.getL().isDefined )
-      nSwap.getL().get.removeParent( nSwap )
-    if ( nSwap.getR().isDefined && nSwap.getR() != nSwap.getL() )
-      nSwap.getR().get.removeParent( nSwap )
-    if ( nOther != nSwap && nOther.getL().isDefined )
-      nOther.getL().get.removeParent( nOther )
-    if ( nOther != nSwap && nOther.getR().isDefined && nOther.getR() != nOther.getL() )
-      nOther.getR().get.removeParent( nOther )
 
     ( ( nodes - nSwap ) - nOther ) ++ res
   }
@@ -315,11 +456,154 @@ object AnnealingSolver {
       nodes = applyOperation( nodes, applyIfIncrease )
     }
 
-    // run a merge on all nodes here?
-
     // look at dropping latency if possible?
 
     nodes
+  }
+
+  /** Run in parallel
+    */
+  def runPar( nodesIn : HashSet[Node], iter : Int ) : HashSet[Node] = {
+    val nodes = new collection.parallel.mutable.ParHashSet[Node]()
+
+    nodes ++= nodesIn
+
+    val innerLoopSize = 100000
+    val iterDub = iter.toDouble/innerLoopSize
+    val iterPer = 100/iterDub
+    val A = math.log( 0.01 )/iterDub
+
+    for( i <- 0 until iter/innerLoopSize ) {
+      // decay the likelihood of performing an operation that makes the solution worse
+      val threshold = (1 - math.exp( A*i ))/0.99
+      println( "progress = " + (i*iterPer ) + "%, threshold = " + threshold + ", cost = " + nodes.size )
+      val successCount = new java.util.concurrent.atomic.AtomicInteger()
+      for ( n <- nodes ) {
+        assert( !n.isLocked(), "No node should be locked now" )
+        if ( n.getL().isDefined )
+          assert( nodes.contains( n.getL().get ), "HashSet should contain L" )
+        if ( n.getR().isDefined )
+          assert( nodes.contains( n.getR().get ), "HashSet should contain R" )
+        for ( p <- n.getParents() )
+          assert( nodes.contains( p ), "HashSet should contain parents" )
+      }
+      (  0 until innerLoopSize ).par.foreach( j => {
+
+        val applyIfIncrease = Random.nextDouble >= threshold
+        // pick a node randomally, lock it and the ones around it
+        val tmpSync = nodes.synchronized {
+          val nRand = Random.nextInt(nodes.size)
+          val it = nodes.iterator.drop(nRand)
+          val node = it.next
+          val lockRes = acquireLocks( node )
+          for ( n <- lockRes._2 ) {
+            n.setLockBy( j )
+            assert( nodes.contains( n ), "locked nodes should be in hashset but " + n + " wasn't" )
+          }
+          ( node, lockRes )
+        }
+        val node = tmpSync._1
+        val lockRes = tmpSync._2
+
+        if ( !node.isC() && lockRes._1 ) {
+
+          // choose operation to perform
+          val chooseMerge = Random.nextInt( 2 ) == 0
+          val chooseL = Random.nextInt( 2 ) == 0
+          val nSwap = {
+            if ( chooseL )
+              node.getL().get
+            else
+              node.getR().get
+          }
+
+          // perform a merge
+          if ( chooseMerge ) {
+            val parents = nSwap.getParents()
+            val selNode = parents.find( p => p != node && {
+              ( p.getL() == node.getL() && p.getR() == node.getR() ) ||
+              ( p.getL() == node.getR() && p.getR() == node.getL() )
+            })
+            if ( selNode.isDefined ) {
+              // lock selected node parents too ... filter out already locked via other
+              val selPar = selNode.get.getParents().filterNot( n => lockRes._2.contains( n ) )
+              val parLocks = lockNodes( selPar, lockRes._2 )
+              for ( n <- parLocks._2 )
+                n.setLockBy( j )
+              if ( parLocks._1 ) {
+                // perform it with some probability if it increases the cost
+                val res = performMerge( node, selNode.get )
+                if ( res.isDefined ) {
+                  assert( node.isLocked() && selNode.get.isLocked(), "Should be removing locked nodes" )
+                  assert( lockRes._2.contains( node ) && lockRes._2.contains( selNode.get ), "Should hold locks" )
+                  assert( node.getLockBy() == j && selNode.get.getLockBy() == j, "Must be node owner")
+                  assert( !nodes.contains( res.get ), "Adding node already in?" )
+                  nodes.synchronized {
+                    nodes -= node
+                    nodes -= selNode.get
+                    nodes += res.get
+                  }
+                  res.get.unlockNode()
+                }
+                parLocks._2.map( n => n.unlockNode() )
+                successCount.incrementAndGet()
+              }
+            }
+          } else  {
+            val nOther = {
+              if ( chooseL )
+                node.getR().get
+              else
+                node.getL().get
+            }
+
+            // check if have to do split instead of swap
+            if ( nSwap.getParents().size > 1 || nOther.getParents.size > 1 ) {
+              if ( applyIfIncrease ) {
+                val nodeToSplit = {
+                  if ( nSwap.getParents().size > 1 )
+                    nSwap
+                  else
+                    nOther
+                }
+                val nodeList = performSplit( nodeToSplit )
+                if ( nodeList.size > 0 ) {
+                  assert( nodeToSplit.isLocked(), "Should be removing locked nodes" )
+                  assert( lockRes._2.contains( nodeToSplit ), "Should hold locks" )
+                  assert( !nodeList.find( nodes.contains( _ ) ).isDefined, "Adding node already in?" )
+                  assert( nodeToSplit.getLockBy() == j, "Must be node owner")
+                  nodes.synchronized {
+                    nodes -= nodeToSplit
+                    nodes ++= nodeList
+                  }
+                  nodeList.map( n => n.unlockNode() )
+                  successCount.incrementAndGet()
+                }
+              }
+            } else { // else swap
+              val res = performSwap( node, nSwap, nOther, applyIfIncrease )
+              if ( res.size > 0 ) {
+                assert( nSwap.isLocked() && nOther.isLocked(), "Should be removing locked nodes" )
+                assert( lockRes._2.contains( nSwap ) && lockRes._2.contains( nOther ), "Should hold locks" )
+                val repNode = res.drop(1).find( nodes.contains( _ ) )
+                assert( !repNode.isDefined, "Adding " + repNode + " already in?" )
+                assert( nSwap.getLockBy() == j && nOther.getLockBy() == j, "Must be node owner")
+                nodes.synchronized {
+                  nodes -= nSwap
+                  nodes -= nOther
+                  nodes ++= res.drop(1)
+                }
+                res.drop(1).map( n => n.unlockNode() ) // only unlock new nodes
+                successCount.incrementAndGet()
+              }
+            }
+          }
+          lockRes._2.map( n => n.unlockNode() )
+        }
+      })
+      println( "SuccessCount = " + successCount.get() )
+    }
+    HashSet[Node]() ++ nodes
   }
 
   /** Convert the node set to a .dot graph file

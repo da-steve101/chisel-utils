@@ -611,15 +611,33 @@ class SumScheduleSuite extends TestSuite {
     val cpCoords = getConvSums( imgSize, filterSize ).zipWithIndex.map( cSet => {
       cSet._1.map( v => Vector( cSet._2 - v(0)) ++ v.drop(1) )
     })
-    println( "cpCoords = " + cpCoords )
     val latAdd = AnnealingSolver.needLatency( List( cpCoords ) )
     println( "latAdd = " + latAdd )
     val cp = cpCoords.zipWithIndex.map( cSet => {
       cSet._1.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) })
     })
-    println( "cp = " + cp )
     var nodes = AnnealingSolver.init( List( cp ) )._1
-    nodes = AnnealingSolver.run( nodes, 10000000 )
+    nodes = AnnealingSolver.run( nodes, 100000000 )
+    assert( testLinks( nodes ), "Nodes must be connected properly" )
+    for ( n <- nodes )
+      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
+    AnnealingSolver.toDot( nodes, "conv3n5.dot" )
+    println( "cost = " + nodes.size )
+  }
+
+  @Test def conv3n5Par {
+    val imgSize = 5
+    val filterSize = 3
+    val cpCoords = getConvSums( imgSize, filterSize ).zipWithIndex.map( cSet => {
+      cSet._1.map( v => Vector( cSet._2 - v(0)) ++ v.drop(1) )
+    })
+    val latAdd = AnnealingSolver.needLatency( List( cpCoords ) )
+    println( "latAdd = " + latAdd )
+    val cp = cpCoords.zipWithIndex.map( cSet => {
+      cSet._1.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) })
+    })
+    var nodes = AnnealingSolver.init( List( cp ) )._1
+    nodes = AnnealingSolver.runPar( nodes, 10000000 )
     assert( testLinks( nodes ), "Nodes must be connected properly" )
     for ( n <- nodes )
       assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )

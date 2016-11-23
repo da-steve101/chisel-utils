@@ -5,6 +5,7 @@
 package chiselutils.algorithms
 
 import collection.mutable.ArrayBuffer
+import java.util.concurrent.atomic.AtomicBoolean
 
 object Node {
 
@@ -132,6 +133,14 @@ class Node( val dim : Int, val nodeSize : Int ) {
   private var rNode : Option[Node] = None
   private val parents = ArrayBuffer[Node]()
   private var nodeType = -1
+  private val available = new AtomicBoolean();
+
+  private var lockBy = new java.util.concurrent.atomic.AtomicInteger()
+  def setLockBy( x : Int ) = {
+    assert( lockBy.getAndSet(x) == -1, "Trying to steal a lock" )
+  }
+  def getLockBy() = lockBy.get()
+  def resetLockBy() = { lockBy.set(-1) }
 
   // the unique sets in this Node, is sorted by hashcode
   private val uk = ArrayBuffer[Set[Vector[Int]]]()
@@ -149,6 +158,16 @@ class Node( val dim : Int, val nodeSize : Int ) {
   private def getP0( p : Vector[Int] ) = p.head
   private def incr( p : Vector[Int] ) : Vector[Int] = Vector( p.head + 1 ) ++ p.drop(1)
   private def incr( q : Set[Vector[Int]] )  : Set[Vector[Int]] = q.map( incr(_) )
+
+  def isLocked() = !available.get()
+  def unlockNode() = {
+    assert( isLocked(), "Trying to unlock available node" )
+    resetLockBy()
+    available.set( true )
+  }
+  def lockNode() = {
+    available.compareAndSet( true, false )
+  }
 
   def isA() = nodeType == 0
   def isB() = nodeType == 1
