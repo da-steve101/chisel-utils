@@ -124,7 +124,7 @@ object Node {
 
 }
 
-class Node( val dim : Int, val nodeSize : Int, uk : List[Set[Vector[Int]]], ck : List[Int] ) {
+class Node( val dim : Int, val nodeSize : Int, val uk : List[Set[Vector[Int]]], val ck : List[Int] ) {
 
   assert( dim >= 1, "The dimension of p must be atleast 1" )
 
@@ -250,13 +250,6 @@ class Node( val dim : Int, val nodeSize : Int, uk : List[Set[Vector[Int]]], ck :
 
   override def toString() : String = {
     "Node@" + hashCode + "(" + letter() + ") { " + uk.toList + " } { " + getCk() + " }"
-  }
-
-  override lazy val hashCode : Int = uk.hashCode + ck.hashCode
-
-  override def equals( that : Any ) : Boolean = that match {
-    case n : Node => { n.hashCode == hashCode }
-    case _ => false
   }
 
 }

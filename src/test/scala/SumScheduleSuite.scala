@@ -596,7 +596,7 @@ class SumScheduleSuite extends TestSuite {
           if ( n.getR().isDefined )
             println( "Node.getR().parents = " + n.getR().get.getParents() )
         }
-        assert( valid, "Node " + n + " did not satisfy constraints" )
+        assert( valid && lValid && rValid, "Node " + n + " did not satisfy constraints" )
       }
 
       // overwrite each cycle to catch changes
@@ -642,6 +642,81 @@ class SumScheduleSuite extends TestSuite {
     for ( n <- nodes )
       assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
     AnnealingSolver.toDot( nodes, "conv3n5.dot" )
+    println( "cost = " + nodes.size )
+  }
+
+  @Test def trinaryLayer {
+    val filterSize = ( 3, 3, 3, 128 )
+    val imgSize = ( 32, 32 )
+    val convFilter = List.fill(filterSize._4) {
+      ( 0 until filterSize._1).toList.map( f1 => {
+        ( 0 until filterSize._2).toList.map( f2 => {
+          ( 0 until filterSize._3).toList.map( f3 => {
+            val num = Random.nextInt(100)
+            // cant deal with all 0 yet so just force not that case by putting 1 in mid
+            val inMid = ( f1 == filterSize._1/2 && f2 == filterSize._2/2 && f3 == filterSize._3/2 )
+            val trinary = {
+              if ( num < 16 || inMid  )
+                1
+              else if ( num < 16 + 22 )
+                -1
+              else
+                0
+            }
+            trinary
+          })
+        })
+      })
+    }
+    for ( convFilt <- convFilter )
+      assert( convFilt(1)(1)(1) == 1, "Mid must be 1" )
+
+    val cp = ( 0 until filterSize._4 ).map( convIdx => { // for each filter
+      ( 0 until imgSize._2 ).map( y => { // for each column in the img
+        ( 0 until imgSize._1 ).map( x => { // for each row in that column
+          ( 0 until filterSize._1 ).map( px => {
+            ( 0 until filterSize._2 ).map( py => {
+              ( 0 until filterSize._3 ).map( d => {
+                val xpx = x + px - (filterSize._1/2)
+                val ypy = y + py - (filterSize._2/2)
+                ( xpx, ypy, px, py, d )
+              }).filter{ case ( xpx, ypy, px, py, d ) => { // filter out zeros and any edge parts
+                val isZero = ( convFilter( convIdx )(px)(py)(d) == 0 )
+                ( xpx >= 0 && xpx < imgSize._1 && ypy >= 0 && ypy < imgSize._2 && !isZero )
+              }}.map{ case ( xpx, ypy, px, py, d ) => {
+                val addIdx = if ( convFilter( convIdx )(px)(py)(d) == 1 ) 1 else 0
+                Vector( ypy*imgSize._2 + xpx, (2*d) + addIdx )
+              }}.toSet
+            }).reduce( _ ++ _ ) // sum over filter cols
+          }).reduce( _ ++ _ ) // sum over filter rows
+        })
+      }).reduce( _ ++ _ ).toList // collect image into a list
+    })
+
+    for ( convFilt <- cp ) {
+      for ( cSet <- convFilt ){
+        assert( cSet.size > 0, "can't deal with empty sets" )
+      }
+    }
+    val cpCoords = cp.map( convFilt => {
+      convFilt.zipWithIndex.map( cSet => {
+        cSet._1.map( v => Vector( cSet._2 - v(0)) ++ v.drop(1) )
+      })
+    }).toList
+    val latAdd = AnnealingSolver.needLatency( cpCoords )
+    println( "latAdd = " + latAdd )
+    val cpFinal = cpCoords.map( convFilt => {
+      convFilt.zipWithIndex.map( cSet => {
+        cSet._1.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) })
+      })
+    })
+    var nodes = AnnealingSolver.init( cpFinal )._1
+    println( "created " + nodes.size + " nodes")
+    nodes = AnnealingSolver.runPar( nodes, 10000000 )
+    assert( testLinks( nodes ), "Nodes must be connected properly" )
+    for ( n <- nodes )
+      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
+    AnnealingSolver.toDot( nodes, "trinary.dot" )
     println( "cost = " + nodes.size )
   }
 
