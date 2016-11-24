@@ -413,10 +413,15 @@ object AnnealingSolver {
     val iterPer = 100/iterDub
     val A = math.log( 0.01 )/iterDub
 
+    var oldTime = System.currentTimeMillis()
+
     for( i <- 0 until iter/innerLoopSize ) {
       // decay the likelihood of performing an operation that makes the solution worse
       val threshold = (1 - math.exp( A*i ))/0.99
-      println( "progress = " + (i*iterPer ) + "%, threshold = " + threshold + ", cost = " + nodes.size )
+      val currTime = System.currentTimeMillis()
+      println( "progress = " + (i*iterPer ) + "%, threshold = " + threshold +
+        ", cost = " + nodes.size + ", time = " + (( currTime - oldTime ).toDouble/60000) + " mins")
+      oldTime = currTime
       val successCount = new java.util.concurrent.atomic.AtomicInteger()
       (  0 until innerLoopSize ).par.foreach( j => {
 
