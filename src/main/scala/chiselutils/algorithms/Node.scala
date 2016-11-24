@@ -52,7 +52,7 @@ object Node {
       return false
 
     // look for violation of constraint using find
-    val violation = n.getCk().zipWithIndex.find( cki => { n.getUki(cki._1).size != 0 &&
+    val violation = n.ck.zipWithIndex.find( cki => { n.getUki(cki._1).size != 0 &&
       ( n.getL().get.getModIdx( cki._2 ) == -1 ||
         n.getR().get.getModIdx( cki._2 ) == -1 ||
         !n.testAddUnion( cki._2 )
@@ -71,7 +71,7 @@ object Node {
       return false
 
     // look for violation using find
-    val violation = n.getCk().zipWithIndex.find( cki => { n.getUki(cki._1).size != 0 &&
+    val violation = n.ck.zipWithIndex.find( cki => { n.getUki(cki._1).size != 0 &&
       !n.testMux( cki._2 )
     }).isDefined
     !violation
@@ -132,7 +132,7 @@ class Node( val dim : Int, val nodeSize : Int, val uk : List[Set[Vector[Int]]], 
   private var rNode : Option[Node] = None
   private val parents = collection.mutable.Set[Node]()
   private var nodeType = -1
-  private val available = new AtomicBoolean();
+  private val available = new AtomicBoolean( false );
 
   def getModIdx( i : Int ) : Int = { ck( ( i + nodeSize - 1 ) % nodeSize ) }
   def getModSet( i : Int ) : Set[Vector[Int]] = {
@@ -172,7 +172,6 @@ class Node( val dim : Int, val nodeSize : Int, val uk : List[Set[Vector[Int]]], 
       "_"
   }
 
-  def getCk() = ck.toList
   def getCkPrev() = { ck.drop(1).toList ++ ck.take(1).toList }
   def getCkNext() = { ck.takeRight(1).toList ++ ck.dropRight(1).toList }
   def getUki( i : Int ) : Set[Vector[Int]] = {
@@ -182,12 +181,12 @@ class Node( val dim : Int, val nodeSize : Int, val uk : List[Set[Vector[Int]]], 
   }
   def getCki( i : Int ) : Set[Vector[Int]] = getUki( ck( i ) )
 
-  def getUk() = uk.toList
   def getUkPrev() = { uk.toList.map( uki => uki.map( v => { Vector( v(0) - 1 ) ++ v.drop(1) })) }
   def getUkNext() = { uk.toList.map( uki => uki.map( v => { Vector( v(0) + 1 ) ++ v.drop(1) })) }
-  def getL() = lNode
-  def getR() = rNode
+  def getL() = { lNode }
+  def getR() = { rNode }
   def setL( n : Option[Node] ) = {
+    assert( isLocked(), "Node should be locked to setL" )
     if ( lNode.isDefined && lNode != rNode )
       lNode.get.removeParent( this )
     lNode = n
@@ -195,6 +194,7 @@ class Node( val dim : Int, val nodeSize : Int, val uk : List[Set[Vector[Int]]], 
       n.get.addParent( this )
   }
   def setR( n : Option[Node] ) = {
+    assert( isLocked(), "Node should be locked to setR" )
     if ( rNode.isDefined && lNode != rNode )
       rNode.get.removeParent( this )
     rNode = n
@@ -205,9 +205,11 @@ class Node( val dim : Int, val nodeSize : Int, val uk : List[Set[Vector[Int]]], 
   def getParentSet() = parents.toSet
   def intersectPar( otherP : Set[Node] ) = { otherP.intersect( parents.toSet ) }
   private def addParent( n : Node ) = {
+    assert( isLocked(), "Node should be locked to add parent" )
     parents += n
   }
   private def removeParent( n : Node ) = {
+    assert( isLocked(), "Node should be locked to remove parent" )
     assert( hasParent(n), "Trying to remove non parent " + n )
     parents -= n
   }
@@ -249,7 +251,7 @@ class Node( val dim : Int, val nodeSize : Int, val uk : List[Set[Vector[Int]]], 
   }
 
   override def toString() : String = {
-    "Node@" + hashCode + "(" + letter() + ") { " + uk.toList + " } { " + getCk() + " }"
+    "Node@" + hashCode + "(" + letter() + ") { " + uk + " } { " + ck + " }"
   }
 
 }

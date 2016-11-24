@@ -52,8 +52,8 @@ object Transforms {
     val sameIn = nA.getL() == nB.getL() && nA.getR() == nB.getR()
     val oppositeIn = nA.getL() == nB.getR() && nA.getR() == nB.getL()
     if ( sameIn || oppositeIn ) {
-      val mapping = commonMapping( nA.getUk(), nB.getUk() )
-      val ck = ( nA.getCk() zip nB.getCk() ).map( cki => {
+      val mapping = commonMapping( nA.uk, nB.uk )
+      val ck = ( nA.ck zip nB.ck ).map( cki => {
         if ( cki._1 == -1 && cki._2 == -1 )
           -1
         else if ( cki._2 == -1 )
@@ -153,7 +153,7 @@ object Transforms {
   private def swapCase1( nPar : Node, nSwap : Node ) : List[Node] = {
     val nodeAuK = nSwap.getL().get.getUkNext()
     val nodeAcK = nSwap.getL().get.getCkNext()
-    val nodeAcKFiltered = nodeAcK.zip( nSwap.getCk() ).map( z => if ( z._2 == -1 ) -1 else z._1 )
+    val nodeAcKFiltered = nodeAcK.zip( nSwap.ck ).map( z => if ( z._2 == -1 ) -1 else z._1 )
 
     val nodeA = Node( nodeAuK, nodeAcKFiltered )
     nodeA.setL( nSwap.getL() )
@@ -161,7 +161,7 @@ object Transforms {
     nodeA.setB()
     val nodeBuK = nSwap.getR().get.getUkNext()
     val nodeBcK = nSwap.getR().get.getCkNext()
-    val nodeBcKFiltered = nodeBcK.zip( nSwap.getCk() ).map( z => if ( z._2 == -1 ) -1 else z._1 )
+    val nodeBcKFiltered = nodeBcK.zip( nSwap.ck ).map( z => if ( z._2 == -1 ) -1 else z._1 )
 
     val nodeB = Node( nodeBuK, nodeBcKFiltered )
     nodeB.setL( nSwap.getR() )
@@ -208,7 +208,7 @@ object Transforms {
     // nSwap must be the reg by itself
     // rotate so that nOther.rNode + nSwap.lNode and nOther.lNode is reg
 
-    val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
+    val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
     val otherLuK = nOther.getL().get.getUkNext()
     val nodeA = Node( otherLuK, otherLcK )
     nodeA.setL( nOther.getL() )
@@ -216,10 +216,10 @@ object Transforms {
     nodeA.setB()
 
     // find distinct ck combinations
-    val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.getCk() )
+    val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.ck )
     val otherRuK = nOther.getR().get.getUkNext()
-    val swapuK = nSwap.getUk()
-    val swapcK = nSwap.getCk()
+    val swapuK = nSwap.uk
+    val swapcK = nSwap.ck
 
     // combine two as union
     val combAdd = combineAdd( swapuK, swapcK, otherRuK, otherRcK )
@@ -246,10 +246,10 @@ object Transforms {
     * nodeB.rNode = nOther.rNode
     */
   private def swapCase5( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
-    val otherLFiltered = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
-    val otherRFiltered = filterCk( nOther.getR().get.getCkNext(), nOther.getCk() )
-    val swapLFiltered = filterCk( nSwap.getL().get.getCkNext(), nSwap.getCk() )
-    val swapRFiltered = filterCk( nSwap.getR().get.getCkNext(), nSwap.getCk() )
+    val otherLFiltered = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
+    val otherRFiltered = filterCk( nOther.getR().get.getCkNext(), nOther.ck )
+    val swapLFiltered = filterCk( nSwap.getL().get.getCkNext(), nSwap.ck )
+    val swapRFiltered = filterCk( nSwap.getR().get.getCkNext(), nSwap.ck )
     val nodeAComb = combineAdd( nOther.getL().get.getUkNext(), otherLFiltered,
       nSwap.getL().get.getUkNext(), swapLFiltered )
     val nodeBComb = combineAdd( nOther.getR().get.getUkNext(), otherRFiltered,
@@ -283,9 +283,9 @@ object Transforms {
     */
   private def swapCase6( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
 
-    val othercK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
+    val othercK = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
     val otheruK = nOther.getL().get.getUkNext()
-    val swapcK = filterCk( nSwap.getL().get.getCkNext(), nSwap.getCk() )
+    val swapcK = filterCk( nSwap.getL().get.getCkNext(), nSwap.ck )
     val swapuK = nSwap.getL().get.getUkNext()
     val combAdd = combineAdd( otheruK, othercK, swapuK, swapcK )
     val nodeA = Node( combAdd._1, combAdd._2 )
@@ -313,13 +313,13 @@ object Transforms {
     */
   private def swapCase7( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
 
-    val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
+    val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
     val otherLuK = nOther.getL().get.getUkNext()
-    val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.getCk() )
+    val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.ck )
     val otherRuK = nOther.getR().get.getUkNext()
-    val swapcKL = filterCk( nSwap.getCk(), otherLcK )
-    val swapcKR = filterCk( nSwap.getCk(), otherRcK )
-    val swapuK = nSwap.getUk()
+    val swapcKL = filterCk( nSwap.ck, otherLcK )
+    val swapcKR = filterCk( nSwap.ck, otherRcK )
+    val swapuK = nSwap.uk
     val combAddL = combineAdd( otherLuK, otherLcK, swapuK, swapcKL )
     val combAddR = combineAdd( otherRuK, otherRcK, swapuK, swapcKR )
     val nodeA = Node( combAddL._1, combAddL._2 )
@@ -349,9 +349,9 @@ object Transforms {
     */
   private def swapCase10( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
 
-    val othercK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
+    val othercK = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
     val otheruK = nOther.getL().get.getUkNext()
-    val swapcK = filterCk( nSwap.getL().get.getCkNext(), nSwap.getCk() )
+    val swapcK = filterCk( nSwap.getL().get.getCkNext(), nSwap.ck )
     val swapuK = nSwap.getL().get.getUkNext()
     val combMux = combineMux( otheruK, othercK, swapuK, swapcK )
     val nodeA = Node( combMux._1, combMux._2 )
@@ -393,11 +393,11 @@ object Transforms {
 
       val nodeAuK = commonNode.getUkNext()
       val nodeAcKUp = commonNode.getCkNext()
-      val ckComb = nSwap.getCk().zip( nOther.getCk() ).map( cks => {
+      val ckComb = nSwap.ck.zip( nOther.ck ).map( cks => {
         if ( cks._1 == -1 )
           cks._2
         else {
-          assert( cks._2 == -1, "Only one should be empty as followed my mux" )
+          assert( cks._2 == -1, "Only one should be empty as followed my mux with " + nSwap + " and " + nOther )
           cks._1
         }
       })
@@ -407,8 +407,8 @@ object Transforms {
       nodeA.setL( Some(commonNode) )
       nodeA.setR( Some(commonNode) )
 
-      val swapCkFiltered = filterCk( swapSpare.getCkNext(), nSwap.getCk() )
-      val otherCkFiltered = filterCk( otherSpare.getCkNext(), nOther.getCk() )
+      val swapCkFiltered = filterCk( swapSpare.getCkNext(), nSwap.ck )
+      val otherCkFiltered = filterCk( otherSpare.getCkNext(), nOther.ck )
       val combMux = combineMux( swapSpare.getUkNext(), swapCkFiltered,
         otherSpare.getUkNext(), otherCkFiltered )
       val nodeB = Node( combMux._1, combMux._2 )
@@ -437,10 +437,10 @@ object Transforms {
     */
   private def swapCase12( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
 
-    val otherLFiltered = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
-    val otherRFiltered = filterCk( nOther.getR().get.getCkNext(), nOther.getCk() )
-    val swapLFiltered = filterCk( nSwap.getL().get.getCkNext(), nSwap.getCk() )
-    val swapRFiltered = filterCk( nSwap.getR().get.getCkNext(), nSwap.getCk() )
+    val otherLFiltered = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
+    val otherRFiltered = filterCk( nOther.getR().get.getCkNext(), nOther.ck )
+    val swapLFiltered = filterCk( nSwap.getL().get.getCkNext(), nSwap.ck )
+    val swapRFiltered = filterCk( nSwap.getR().get.getCkNext(), nSwap.ck )
     val nodeAComb = combineMux( nOther.getL().get.getUkNext(), otherLFiltered,
       nSwap.getL().get.getUkNext(), swapLFiltered )
     val nodeBComb = combineMux( nOther.getR().get.getUkNext(), otherRFiltered,
@@ -473,17 +473,17 @@ object Transforms {
     */
   private def swapCase13( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
 
-    val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
+    val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
     val otherLuK = nOther.getL().get.getUkNext()
     val nodeA = Node( otherLuK, otherLcK )
     nodeA.setL( nOther.getL() )
     nodeA.setR( nOther.getL() )
     nodeA.setB()
     // find distinct ck combinations
-    val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.getCk() )
+    val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.ck )
     val otherRuK = nOther.getR().get.getUkNext()
-    val swapuK = nSwap.getUk()
-    val swapcK = nSwap.getCk()
+    val swapuK = nSwap.uk
+    val swapcK = nSwap.ck
 
     // combine two as union
     val combMux = combineMux( swapuK, swapcK, otherRuK, otherRcK )
@@ -573,7 +573,7 @@ object Transforms {
     val ckNeeded = shuffledPar.map( n => {
       if ( n.isA() || n.getL() == n.getR() ) {
         // adds or reg are easy as all are needed
-        n.getCkPrev().zip( nA.getCk() ).map( ck => {
+        n.getCkPrev().zip( nA.ck ).map( ck => {
           if ( ck._1 == -1 )
             -1
           else
@@ -584,11 +584,11 @@ object Transforms {
         val prevCk = n.getCkPrev()
         val prevUk = n.getUkPrev()
         // determine for each ck if uk is provided by split
-        prevCk.zip( nA.getCk() ).map( ck => {
+        prevCk.zip( nA.ck ).map( ck => {
           if ( ck._1 == -1 )
             -1
           else {
-            if ( ck._2 != -1 && prevUk( ck._1 ) == nA.getUk()( ck._2 ) )
+            if ( ck._2 != -1 && prevUk( ck._1 ) == nA.uk( ck._2 ) )
               ck._2
             else
               -1
@@ -615,8 +615,8 @@ object Transforms {
         x
       }
     }))
-    val n1 = Node( nA.getUk(), n1Ck.toList )
-    val n2 = Node( nA.getUk(), n2Ck.toList )
+    val n1 = Node( nA.uk, n1Ck.toList )
+    val n2 = Node( nA.uk, n2Ck.toList )
     if ( nA.getL().isDefined ) {
       n1.setL( nA.getL() )
       n2.setL( nA.getL() )

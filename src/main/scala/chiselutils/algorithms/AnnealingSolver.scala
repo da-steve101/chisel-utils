@@ -12,12 +12,12 @@ object AnnealingSolver {
     */
   def cMerge( nodeMap : HashSet[Node] ) : ( HashSet[Node], List[Node] ) = {
     val nodeCs = nodeMap.filter( _.isC() )
-    val groupings = nodeCs.toList.groupBy( _.getUk() )
+    val groupings = nodeCs.toList.groupBy( _.uk )
     val mergedNodes = groupings.map( grp => {
       if ( grp._2.size == 1 )
         grp._2(0)
       else {
-        val ckAll = grp._2.map( _.getCk() ).transpose
+        val ckAll = grp._2.map( _.ck ).transpose
         val newCk = ckAll.map( cks => {
           cks.reduce( (x,y) => {
             if ( x == -1 )
@@ -61,9 +61,9 @@ object AnnealingSolver {
   /** Return a set of all nodes created and a list of all nodes that are termination points
     */
   private def addPartition( n : Node ) : ( HashSet[Node], List[Node] ) = {
-    assert( n.getUk().size == 1, "Can only add partition on a single set" )
+    assert( n.uk.size == 1, "Can only add partition on a single set" )
 
-    var addSet = n.getUk().head
+    var addSet = n.uk.head
 
     val regDelay = cycRemaining( addSet.toList.map( v => v(0) ) )
     val allNodes = collection.mutable.HashSet( n )
@@ -77,7 +77,7 @@ object AnnealingSolver {
       currNode = newNode
     }
 
-    addSet = currNode.getUk().head
+    addSet = currNode.uk.head
 
     if ( addSet.size == 1 ){
       currNode.setC()
@@ -119,10 +119,10 @@ object AnnealingSolver {
   /** Return all nodes created and a list of uncomplete nodes
     */
   private def muxPartition( n : Node ) : ( HashSet[Node], List[Node] ) = {
-    if ( n.getUk().size == 1 )
+    if ( n.uk.size == 1 )
       return ( HashSet( n ), List( n ) )
 
-    val ukTime = n.getUk().map( s => cycRemaining( s.toList.map( v => v(0) ) ))
+    val ukTime = n.uk.map( s => cycRemaining( s.toList.map( v => v(0) ) ))
     val regDelays = cycRemaining( ukTime )
     val allNodes = collection.mutable.HashSet( n )
     var currNode = n
@@ -135,7 +135,7 @@ object AnnealingSolver {
       currNode = newNode
     }
 
-    if ( n.getUk.size == 2 ) {
+    if ( n.uk.size == 2 ) {
       val nA = Node( List( currNode.getUkPrev().head ), currNode.getCkPrev().map( ck => if ( ck == 0 ) 0 else -1 ) )
       val nB = Node( List( currNode.getUkPrev().last ), currNode.getCkPrev().map( ck => if ( ck == 1 ) 0 else -1 ) )
       currNode.setL( Some(nA) )
@@ -146,7 +146,7 @@ object AnnealingSolver {
     }
 
     val muxOpOrdering = ArrayBuffer[Set[Int]]()
-    val currNodeTime = currNode.getUk().map( s => cycRemaining( s.toList.map( v => v(0) ) ))
+    val currNodeTime = currNode.uk.map( s => cycRemaining( s.toList.map( v => v(0) ) ))
     val idxList = ( 0 until currNodeTime.size ).map( Set( _ ) )
     var muxOrder = currNodeTime.zip( idxList ).sortBy( _._1 )
     muxOpOrdering += muxOrder( muxOrder.size - 1 )._2
@@ -256,7 +256,23 @@ object AnnealingSolver {
       nodesLocked += nodeR
     }
 
-    // lock parents of node
+    // lock L/R of L/R
+    val nodeLL = { if ( nodeL.getL().isDefined ) List( nodeL.getL().get ) else List[Node]() }
+    val nodeLR = { if ( nodeL.getR().isDefined ) List( nodeL.getR().get ) else List[Node]() }
+    val nodeRL = { if ( nodeR.getL().isDefined ) List( nodeR.getL().get ) else List[Node]() }
+    val nodeRR = { if ( nodeR.getR().isDefined ) List( nodeR.getR().get ) else List[Node]() }
+    for ( nIn <- nodeLL ++ nodeLR ++ nodeRL ++ nodeRR ) {
+      if ( !nodesLocked.contains(nIn) ) {
+        val lock = nIn.lockNode()
+        if ( !lock ) {
+          nodesLocked.map( n => n.unlockNode() )
+          return (false, Set[Node]())
+        }
+        nodesLocked += nIn
+      }
+    }
+
+    // lock parents of node, nodeL and nodeR
     val lockPar = lockNodes( node.getParents() ++ nodeL.getParents() ++ nodeR.getParents(), nodesLocked.toSet )
     if ( !lockPar._1 ) {
         nodesLocked.map( n => n.unlockNode() )
@@ -405,7 +421,7 @@ object AnnealingSolver {
   /** Run in parallel
     */
   def runPar( nodesIn : HashSet[Node], iter : Int, innerLoopSize : Int = 100000 ) : HashSet[Node] = {
-    val nodes = new collection.parallel.mutable.ParHashSet[Node]()
+    val nodes = new collection.mutable.HashSet[Node]()
 
     nodes ++= nodesIn
 
@@ -423,6 +439,14 @@ object AnnealingSolver {
         ", cost = " + nodes.size + ", time = " + (( currTime - oldTime ).toDouble/60000) + " mins")
       oldTime = currTime
       val successCount = new java.util.concurrent.atomic.AtomicInteger()
+      for ( n <- nodes ) {
+        if ( n.getL().isDefined )
+          assert( nodes.contains( n.getL().get ), "L must be in set" )
+        if ( n.getR().isDefined )
+          assert( nodes.contains( n.getL().get ), "R must be in set" )
+        for ( p <- n.getParents() )
+          assert( nodes.contains( p ), "Parents must be in set" )
+      }
       (  0 until innerLoopSize ).par.foreach( j => {
 
         val applyIfIncrease = Random.nextDouble >= threshold
@@ -457,6 +481,8 @@ object AnnealingSolver {
               node.getL().get
           }
 
+          assert( lockRes._2.contains( nSwap ) && lockRes._2.contains( nOther ), "nSwap and nOther should be locked" )
+
           // perform a merge
           if ( chooseMerge ) {
             val parents = nOther.intersectPar( nSwap.getParentSet() )
@@ -465,6 +491,7 @@ object AnnealingSolver {
               // lock selected node parents too ... filter out already locked via other
               val selPar = selNode.get.getParents().filterNot( n => lockRes._2.contains( n ) )
               val parLocks = lockNodes( selPar, lockRes._2 )
+
               if ( parLocks._1 ) {
                 // perform it with some probability if it increases the cost
                 val res = performMerge( node, selNode.get )
