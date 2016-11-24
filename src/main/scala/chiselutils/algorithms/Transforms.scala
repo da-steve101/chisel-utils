@@ -126,7 +126,7 @@ object Transforms {
       else if ( cks._2 == -1 )
         uk1Idx( cks._1 )
       else {
-        assert( uk1Idx( cks._1 ) == uk2Idx( cks._2 ), "Invalid mux combine" )
+        assert( uk1Idx( cks._1 ) == uk2Idx( cks._2 ), "Invalid mux combine of {" + uk1 + ", " + ck1 + "} and {" + uk2 + ", " + ck2 + "}" )
         uk1Idx( cks._1 )
       }
     })
