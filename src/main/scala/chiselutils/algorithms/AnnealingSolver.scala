@@ -34,9 +34,9 @@ object AnnealingSolver {
         for ( n <- grp._2 ) {
           for ( p <- n.getParents() ) {
             if ( p.getL().isDefined && p.getL().get == n )
-              p.setL( newNode )
+              p.setL( Some(newNode) )
             if ( p.getR().isDefined && p.getR().get == n )
-              p.setR( newNode )
+              p.setR( Some(newNode) )
           }
         }
         newNode
@@ -70,8 +70,8 @@ object AnnealingSolver {
     var currNode = n
     for ( i <- 0 until regDelay ) {
       val newNode = Node( currNode.getUkPrev(), currNode.getCkPrev() )
-      currNode.setL( newNode )
-      currNode.setR( newNode )
+      currNode.setL( Some(newNode) )
+      currNode.setR( Some(newNode) )
       currNode.setB()
       allNodes += newNode
       currNode = newNode
@@ -107,8 +107,8 @@ object AnnealingSolver {
     val newRuK = Node.ukPrev( List( elementList.zipWithIndex.filterNot( e => combOp.contains( e._2 ) ).map( _._1 ).toSet ) )
     val newRcK = currNode.getCkPrev() // same as is an add
     val newRNode = Node( newRuK, newRcK )
-    currNode.setL( newLNode )
-    currNode.setR( newRNode )
+    currNode.setL( Some(newLNode) )
+    currNode.setR( Some(newRNode) )
     currNode.setA()
     assert( Node.satisfiesConstraints(currNode), "currNode should satisfy constraints" )
     val lSide = addPartition( newLNode )
@@ -128,8 +128,8 @@ object AnnealingSolver {
     var currNode = n
     for ( i <- 0 until regDelays ) {
       val newNode = Node( currNode.getUkPrev(), currNode.getCkPrev() )
-      currNode.setL( newNode )
-      currNode.setR( newNode )
+      currNode.setL( Some(newNode) )
+      currNode.setR( Some(newNode) )
       currNode.setB()
       allNodes += newNode
       currNode = newNode
@@ -138,8 +138,8 @@ object AnnealingSolver {
     if ( n.getUk.size == 2 ) {
       val nA = Node( List( currNode.getUkPrev().head ), currNode.getCkPrev().map( ck => if ( ck == 0 ) 0 else -1 ) )
       val nB = Node( List( currNode.getUkPrev().last ), currNode.getCkPrev().map( ck => if ( ck == 1 ) 0 else -1 ) )
-      currNode.setL( nA )
-      currNode.setR( nB )
+      currNode.setL( Some(nA) )
+      currNode.setR( Some(nB) )
       currNode.setB()
       assert( Node.satisfiesConstraints(currNode), "currNode should satisfy constraints" )
       return  ( HashSet( nA, nB ) ++ allNodes, List( nA, nB ) )
@@ -167,8 +167,8 @@ object AnnealingSolver {
     val newRuK = currNode.getUkPrev().zipWithIndex.filterNot( e => combOp.contains( e._2 ) ).map( _._1 )
     val newRcK = currNode.getCkPrev().map( ck => combNot.indexOf( ck ) )
     val newRNode = Node( newRuK, newRcK )
-    currNode.setL( newLNode )
-    currNode.setR( newRNode )
+    currNode.setL( Some(newLNode) )
+    currNode.setR( Some(newRNode) )
     currNode.setB()
     assert( Node.satisfiesConstraints(currNode), "currNode should satisfy constraints" )
     val lSide = muxPartition( newLNode )
@@ -228,10 +228,10 @@ object AnnealingSolver {
   private def acquireLocks( node : Node ) : (Boolean, Set[Node]) = {
     if ( node.isC() )
       return ( false, Set[Node]() )
-    assert( node.getL().isDefined && node.getR().isDefined )
     val lockRes = node.lockNode()
     if ( !lockRes )
       return (false, Set[Node]())
+    assert( node.getL().isDefined && node.getR().isDefined, "Node " + node + " is invalid" )
 
     val nodesLocked = collection.mutable.Set[Node]()
     nodesLocked += node
@@ -256,54 +256,6 @@ object AnnealingSolver {
       nodesLocked += nodeR
     }
 
-    // lock L of nodeL
-    if ( nodeL.getL().isDefined ) {
-      if ( !nodesLocked.contains(nodeL.getL().get) ) {
-        val lockLLRes = nodeL.getL().get.lockNode()
-        if ( !lockLLRes ) {
-          nodesLocked.map( n => n.unlockNode() )
-          return (false, Set[Node]())
-        }
-        nodesLocked += nodeL.getL().get
-      }
-    }
-
-    // lock R of nodeL
-    if ( nodeL.getR().isDefined ) {
-      if ( !nodesLocked.contains(nodeL.getR().get) ) {
-        val lockLRRes = nodeL.getR().get.lockNode()
-        if ( !lockLRRes ) {
-          nodesLocked.map( n => n.unlockNode() )
-          return (false, Set[Node]())
-        }
-        nodesLocked += nodeL.getR().get
-      }
-    }
-
-    // lock L of nodeR
-    if ( nodeR.getL().isDefined ) {
-      if ( !nodesLocked.contains(nodeR.getL().get) ) {
-        val lockRLRes = nodeR.getL().get.lockNode()
-        if ( !lockRLRes ) {
-          nodesLocked.map( n => n.unlockNode() )
-          return (false, Set[Node]())
-        }
-        nodesLocked += nodeR.getL().get
-      }
-    }
-
-    // lock R of nodeR
-    if ( nodeR.getR().isDefined ) {
-      if ( !nodesLocked.contains(nodeR.getR().get) ) {
-        val lockRRRes = nodeR.getR().get.lockNode()
-        if ( !lockRRRes ) {
-          nodesLocked.map( n => n.unlockNode() )
-          return (false, Set[Node]())
-        }
-        nodesLocked += nodeR.getR().get
-      }
-    }
-
     // lock parents of node
     val lockPar = lockNodes( node.getParents() ++ nodeL.getParents() ++ nodeR.getParents(), nodesLocked.toSet )
     if ( !lockPar._1 ) {
@@ -322,14 +274,10 @@ object AnnealingSolver {
       return res
 
     // clean up parents of merged nodes
-    if ( nA.getL().isDefined )
-      nA.getL().get.removeParent( nA )
-    if ( nA.getR().isDefined && nA.getR() != nA.getL() )
-      nA.getR().get.removeParent( nA )
-    if ( nB.getL().isDefined )
-      nB.getL().get.removeParent( nB )
-    if ( nB.getR().isDefined && nB.getR() != nB.getL() )
-      nB.getR().get.removeParent( nB )
+    nA.setL( None )
+    nA.setR( None )
+    nB.setL( None )
+    nB.setR( None )
 
     res
   }
@@ -340,11 +288,8 @@ object AnnealingSolver {
 
     // add new nodes and remove old one
     if ( nodeList.size > 0 ) {
-      // clean up parents of merged nodes
-      if ( nodeToSplit.getL().isDefined )
-        nodeToSplit.getL().get.removeParent( nodeToSplit )
-      if ( nodeToSplit.getR().isDefined && nodeToSplit.getR() != nodeToSplit.getL() )
-        nodeToSplit.getR().get.removeParent( nodeToSplit )
+      nodeToSplit.setL( None )
+      nodeToSplit.setR( None )
     }
 
     nodeList
@@ -357,14 +302,10 @@ object AnnealingSolver {
       return res
 
     // clean up parents of merged nodes
-    if ( nSwap.getL().isDefined )
-      nSwap.getL().get.removeParent( nSwap )
-    if ( nSwap.getR().isDefined && nSwap.getR() != nSwap.getL() )
-      nSwap.getR().get.removeParent( nSwap )
-    if ( nOther != nSwap && nOther.getL().isDefined )
-      nOther.getL().get.removeParent( nOther )
-    if ( nOther != nSwap && nOther.getR().isDefined && nOther.getR() != nOther.getL() )
-      nOther.getR().get.removeParent( nOther )
+    nSwap.setL( None )
+    nSwap.setR( None )
+    nOther.setL( None )
+    nOther.setR( None )
 
     res
   }
@@ -514,13 +455,17 @@ object AnnealingSolver {
               node.getR().get
           }
 
+          val nOther = {
+            if ( chooseL )
+              node.getR().get
+            else
+              node.getL().get
+          }
+
           // perform a merge
           if ( chooseMerge ) {
-            val parents = nSwap.getParents()
-            val selNode = parents.find( p => p != node && {
-              ( p.getL() == node.getL() && p.getR() == node.getR() ) ||
-              ( p.getL() == node.getR() && p.getR() == node.getL() )
-            })
+            val parents = nOther.intersectPar( nSwap.getParentSet() )
+            val selNode = parents.find( p => p != node )
             if ( selNode.isDefined ) {
               // lock selected node parents too ... filter out already locked via other
               val selPar = selNode.get.getParents().filterNot( n => lockRes._2.contains( n ) )
@@ -532,6 +477,7 @@ object AnnealingSolver {
                   assert( node.isLocked() && selNode.get.isLocked(), "Should be removing locked nodes" )
                   assert( lockRes._2.contains( node ) && lockRes._2.contains( selNode.get ), "Should hold locks" )
                   assert( !nodes.contains( res.get ), "Adding node already in?" )
+                  assert( node.getParents().size == 0 && selNode.get.getParents().size == 0, "Should not be connected" )
                   nodes.synchronized {
                     nodes -= node
                     nodes -= selNode.get
@@ -543,14 +489,8 @@ object AnnealingSolver {
                 successCount.incrementAndGet()
               }
             }
+            lockRes._2.map( n => n.unlockNode() )
           } else  {
-            val nOther = {
-              if ( chooseL )
-                node.getR().get
-              else
-                node.getL().get
-            }
-
             // check if have to do split instead of swap
             if ( nSwap.getParents().size > 1 || nOther.getParents.size > 1 ) {
               if ( applyIfIncrease ) {
@@ -565,6 +505,7 @@ object AnnealingSolver {
                   assert( nodeToSplit.isLocked(), "Should be removing locked nodes" )
                   assert( lockRes._2.contains( nodeToSplit ), "Should hold locks" )
                   assert( !nodeList.find( nodes.contains( _ ) ).isDefined, "Adding node already in?" )
+                  assert( nodeToSplit.getParents().size == 0, "Should not be connected" )
                   nodes.synchronized {
                     nodes -= nodeToSplit
                     nodes ++= nodeList
@@ -573,6 +514,7 @@ object AnnealingSolver {
                   successCount.incrementAndGet()
                 }
               }
+              lockRes._2.map( n => n.unlockNode() )
             } else { // else swap
               val res = performSwap( node, nSwap, nOther, applyIfIncrease )
               if ( res.size > 0 ) {
@@ -580,6 +522,7 @@ object AnnealingSolver {
                 assert( lockRes._2.contains( nSwap ) && lockRes._2.contains( nOther ), "Should hold locks" )
                 val repNode = res.drop(1).find( nodes.contains( _ ) )
                 assert( !repNode.isDefined, "Adding " + repNode + " already in?" )
+                assert( nSwap.getParents().size == 0 && nOther.getParents().size == 0, "Should not be connected" )
                 nodes.synchronized {
                   nodes -= nSwap
                   nodes -= nOther
@@ -588,9 +531,9 @@ object AnnealingSolver {
                 res.drop(1).map( n => n.unlockNode() ) // only unlock new nodes
                 successCount.incrementAndGet()
               }
+              lockRes._2.map( n => n.unlockNode() )
             }
           }
-          lockRes._2.map( n => n.unlockNode() )
         }
       })
       println( "SuccessCount = " + successCount.get() )

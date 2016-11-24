@@ -187,23 +187,27 @@ class Node( val dim : Int, val nodeSize : Int, uk : List[Set[Vector[Int]]], ck :
   def getUkNext() = { uk.toList.map( uki => uki.map( v => { Vector( v(0) + 1 ) ++ v.drop(1) })) }
   def getL() = lNode
   def getR() = rNode
-  def setL( n : Node ) = {
+  def setL( n : Option[Node] ) = {
     if ( lNode.isDefined && lNode != rNode )
       lNode.get.removeParent( this )
-    lNode = Some(n)
-    n.addParent( this )
+    lNode = n
+    if ( n.isDefined )
+      n.get.addParent( this )
   }
-  def setR( n : Node ) = {
+  def setR( n : Option[Node] ) = {
     if ( rNode.isDefined && lNode != rNode )
       rNode.get.removeParent( this )
-    rNode = Some(n)
-    n.addParent( this )
+    rNode = n
+    if ( n.isDefined )
+      n.get.addParent( this )
   }
   def getParents() = parents.toList
-  def addParent( n : Node ) = {
+  def getParentSet() = parents.toSet
+  def intersectPar( otherP : Set[Node] ) = { otherP.intersect( parents.toSet ) }
+  private def addParent( n : Node ) = {
     parents += n
   }
-  def removeParent( n : Node ) = {
+  private def removeParent( n : Node ) = {
     assert( hasParent(n), "Trying to remove non parent " + n )
     parents -= n
   }

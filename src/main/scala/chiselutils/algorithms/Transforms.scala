@@ -76,17 +76,15 @@ object Transforms {
         nC.setC()
 
       // set l/r
-      if ( nA.getL().isDefined ) 
-        nC.setL( nA.getL().get )
-      if ( nA.getR().isDefined )
-        nC.setR( nA.getR().get )
+      nC.setL( nA.getL() )
+      nC.setR( nA.getR() )
 
       // fix parent links
       for ( p <- nA.getParents() ++ nB.getParents() ) {
         if ( p.getL().isDefined && ( p.getL().get == nA || p.getL().get == nB ) )
-          p.setL( nC )
+          p.setL( Some(nC) )
         if ( p.getR().isDefined && ( p.getR().get == nA || p.getR().get == nB ) )
-          p.setR( nC )
+          p.setR( Some(nC) )
       }
 
       return Some( nC )
@@ -158,20 +156,20 @@ object Transforms {
     val nodeAcKFiltered = nodeAcK.zip( nSwap.getCk() ).map( z => if ( z._2 == -1 ) -1 else z._1 )
 
     val nodeA = Node( nodeAuK, nodeAcKFiltered )
-    nodeA.setL( nSwap.getL().get )
-    nodeA.setR( nSwap.getL().get )
+    nodeA.setL( nSwap.getL() )
+    nodeA.setR( nSwap.getL() )
     nodeA.setB()
     val nodeBuK = nSwap.getR().get.getUkNext()
     val nodeBcK = nSwap.getR().get.getCkNext()
     val nodeBcKFiltered = nodeBcK.zip( nSwap.getCk() ).map( z => if ( z._2 == -1 ) -1 else z._1 )
 
     val nodeB = Node( nodeBuK, nodeBcKFiltered )
-    nodeB.setL( nSwap.getR().get )
-    nodeB.setR( nSwap.getR().get )
+    nodeB.setL( nSwap.getR() )
+    nodeB.setR( nSwap.getR() )
     nodeB.setB()
 
-    nPar.setL( nodeA )
-    nPar.setR( nodeB )
+    nPar.setL( Some(nodeA) )
+    nPar.setR( Some(nodeB) )
     nPar.setA()
     List( nPar, nodeA, nodeB )
   }
@@ -213,8 +211,8 @@ object Transforms {
     val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otherLuK = nOther.getL().get.getUkNext()
     val nodeA = Node( otherLuK, otherLcK )
-    nodeA.setL( nOther.getL().get )
-    nodeA.setR( nOther.getL().get )
+    nodeA.setL( nOther.getL() )
+    nodeA.setR( nOther.getL() )
     nodeA.setB()
 
     // find distinct ck combinations
@@ -227,11 +225,11 @@ object Transforms {
     val combAdd = combineAdd( swapuK, swapcK, otherRuK, otherRcK )
     val nodeB = Node( combAdd._1, combAdd._2 )
     nodeB.setA()
-    nodeB.setL( nOther.getR().get )
-    nodeB.setR( nSwap.getL().get )
+    nodeB.setL( nOther.getR() )
+    nodeB.setR( nSwap.getL() )
 
-    nPar.setL( nodeA )
-    nPar.setR( nodeB )
+    nPar.setL( Some(nodeA) )
+    nPar.setR( Some(nodeB) )
     nPar.setA()
     List( nPar, nodeA, nodeB )
   }
@@ -260,14 +258,14 @@ object Transforms {
     val nodeA = Node( nodeAComb._1, nodeAComb._2 )
     val nodeB = Node( nodeBComb._1, nodeBComb._2 )
     nodeA.setA()
-    nodeA.setL( nOther.getL().get )
-    nodeA.setR( nSwap.getL().get )
-    nodeB.setL( nSwap.getR().get )
-    nodeB.setR( nOther.getR().get )
+    nodeA.setL( nOther.getL() )
+    nodeA.setR( nSwap.getL() )
+    nodeB.setL( nSwap.getR() )
+    nodeB.setR( nOther.getR() )
     nodeB.setA()
 
-    nPar.setL( nodeA )
-    nPar.setR( nodeB )
+    nPar.setL( Some(nodeA) )
+    nPar.setR( Some(nodeB) )
     nPar.setA()
     List( nPar, nodeA, nodeB )
   }
@@ -292,11 +290,11 @@ object Transforms {
     val combAdd = combineAdd( otheruK, othercK, swapuK, swapcK )
     val nodeA = Node( combAdd._1, combAdd._2 )
     nodeA.setA()
-    nodeA.setL( nSwap.getL().get )
-    nodeA.setR( nOther.getL().get )
+    nodeA.setL( nSwap.getL() )
+    nodeA.setR( nOther.getL() )
 
-    nPar.setL( nodeA )
-    nPar.setR( nodeA )
+    nPar.setL( Some(nodeA) )
+    nPar.setR( Some(nodeA) )
     nPar.setB()
     List( nPar, nodeA )
   }
@@ -325,15 +323,15 @@ object Transforms {
     val combAddL = combineAdd( otherLuK, otherLcK, swapuK, swapcKL )
     val combAddR = combineAdd( otherRuK, otherRcK, swapuK, swapcKR )
     val nodeA = Node( combAddL._1, combAddL._2 )
-    nodeA.setL( nOther.getL().get )
-    nodeA.setR( nSwap.getL().get )
+    nodeA.setL( nOther.getL() )
+    nodeA.setR( nSwap.getL() )
     nodeA.setA()
     val nodeB = Node( combAddR._1, combAddR._2 )
-    nodeB.setL( nSwap.getL().get )
-    nodeB.setR( nOther.getR().get )
+    nodeB.setL( nSwap.getL() )
+    nodeB.setR( nOther.getR() )
     nodeB.setA()
-    nPar.setL( nodeA )
-    nPar.setR( nodeB )
+    nPar.setL( Some(nodeA) )
+    nPar.setR( Some(nodeB) )
     nPar.setB()
     List( nPar, nodeA, nodeB )
   }
@@ -357,11 +355,11 @@ object Transforms {
     val swapuK = nSwap.getL().get.getUkNext()
     val combMux = combineMux( otheruK, othercK, swapuK, swapcK )
     val nodeA = Node( combMux._1, combMux._2 )
-    nodeA.setL( nSwap.getL().get )
-    nodeA.setR( nOther.getL().get )
+    nodeA.setL( nSwap.getL() )
+    nodeA.setR( nOther.getL() )
     nodeA.setB()
-    nPar.setL( nodeA )
-    nPar.setR( nodeA )
+    nPar.setL( Some(nodeA) )
+    nPar.setR( Some(nodeA) )
     nPar.setB()
     List( nPar, nodeA )
   }
@@ -406,8 +404,8 @@ object Transforms {
       val nodeAcK = filterCk( nodeAcKUp, ckComb )
       val nodeA = Node( nodeAuK, nodeAcK )
       nodeA.setB()
-      nodeA.setL( commonNode )
-      nodeA.setR( commonNode )
+      nodeA.setL( Some(commonNode) )
+      nodeA.setR( Some(commonNode) )
 
       val swapCkFiltered = filterCk( swapSpare.getCkNext(), nSwap.getCk() )
       val otherCkFiltered = filterCk( otherSpare.getCkNext(), nOther.getCk() )
@@ -415,11 +413,11 @@ object Transforms {
         otherSpare.getUkNext(), otherCkFiltered )
       val nodeB = Node( combMux._1, combMux._2 )
       nodeB.setB()
-      nodeB.setL( swapSpare )
-      nodeB.setR( otherSpare )
+      nodeB.setL( Some(swapSpare) )
+      nodeB.setR( Some(otherSpare) )
 
-      nPar.setL( nodeA )
-      nPar.setR( nodeB )
+      nPar.setL( Some(nodeA) )
+      nPar.setR( Some(nodeB) )
       nPar.setA()
       return List( nPar, nodeA, nodeB )
     }
@@ -451,13 +449,13 @@ object Transforms {
     val nodeA = Node( nodeAComb._1, nodeAComb._2 )
     val nodeB = Node( nodeBComb._1, nodeBComb._2 )
     nodeA.setB()
-    nodeA.setL( nOther.getL().get )
-    nodeA.setR( nSwap.getL().get )
-    nodeB.setL( nSwap.getR().get )
-    nodeB.setR( nOther.getR().get )
+    nodeA.setL( nOther.getL() )
+    nodeA.setR( nSwap.getL() )
+    nodeB.setL( nSwap.getR() )
+    nodeB.setR( nOther.getR() )
     nodeB.setB()
-    nPar.setL( nodeA )
-    nPar.setR( nodeB )
+    nPar.setL( Some(nodeA) )
+    nPar.setR( Some(nodeB) )
     nPar.setB()
     List( nPar, nodeA, nodeB )
   }
@@ -478,8 +476,8 @@ object Transforms {
     val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.getCk() )
     val otherLuK = nOther.getL().get.getUkNext()
     val nodeA = Node( otherLuK, otherLcK )
-    nodeA.setL( nOther.getL().get )
-    nodeA.setR( nOther.getL().get )
+    nodeA.setL( nOther.getL() )
+    nodeA.setR( nOther.getL() )
     nodeA.setB()
     // find distinct ck combinations
     val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.getCk() )
@@ -491,11 +489,11 @@ object Transforms {
     val combMux = combineMux( swapuK, swapcK, otherRuK, otherRcK )
     val nodeB = Node( combMux._1, combMux._2 )
     nodeB.setB()
-    nodeB.setL( nOther.getR().get )
-    nodeB.setR( nSwap.getL().get )
+    nodeB.setL( nOther.getR() )
+    nodeB.setR( nSwap.getL() )
 
-    nPar.setL( nodeA )
-    nPar.setR( nodeB )
+    nPar.setL( Some(nodeA) )
+    nPar.setR( Some(nodeB) )
     nPar.setB()
     List( nPar, nodeA, nodeB )
   }
@@ -620,12 +618,12 @@ object Transforms {
     val n1 = Node( nA.getUk(), n1Ck.toList )
     val n2 = Node( nA.getUk(), n2Ck.toList )
     if ( nA.getL().isDefined ) {
-      n1.setL( nA.getL().get )
-      n2.setL( nA.getL().get )
+      n1.setL( nA.getL() )
+      n2.setL( nA.getL() )
     }
     if ( nA.getR().isDefined ) {
-      n1.setR( nA.getR().get )
-      n2.setR( nA.getR().get )
+      n1.setR( nA.getR() )
+      n2.setR( nA.getR() )
     }
     if ( nA.isA() ) {
       n1.setA()
@@ -637,15 +635,15 @@ object Transforms {
     }
     for ( p <- n1Par ) {
       if ( p.getL().isDefined && p.getL().get == nA )
-        p.setL( n1 )
+        p.setL( Some(n1) )
       if ( p.getR().isDefined && p.getR().get == nA )
-        p.setR( n1 )
+        p.setR( Some(n1) )
     }
     for ( p <- n2Par ) {
       if ( p.getL().isDefined && p.getL().get == nA )
-        p.setL( n2 )
+        p.setL( Some(n2) )
       if ( p.getR().isDefined && p.getR().get == nA )
-        p.setR( n2 )
+        p.setR( Some(n2) )
     }
 
     return List( n1, n2 )
