@@ -404,12 +404,11 @@ object AnnealingSolver {
 
   /** Run in parallel
     */
-  def runPar( nodesIn : HashSet[Node], iter : Int ) : HashSet[Node] = {
+  def runPar( nodesIn : HashSet[Node], iter : Int, innerLoopSize : Int = 100000 ) : HashSet[Node] = {
     val nodes = new collection.parallel.mutable.ParHashSet[Node]()
 
     nodes ++= nodesIn
 
-    val innerLoopSize = 100000
     val iterDub = iter.toDouble/innerLoopSize
     val iterPer = 100/iterDub
     val A = math.log( 0.01 )/iterDub
@@ -419,15 +418,6 @@ object AnnealingSolver {
       val threshold = (1 - math.exp( A*i ))/0.99
       println( "progress = " + (i*iterPer ) + "%, threshold = " + threshold + ", cost = " + nodes.size )
       val successCount = new java.util.concurrent.atomic.AtomicInteger()
-      for ( n <- nodes ) {
-        assert( !n.isLocked(), "No node should be locked now" )
-        if ( n.getL().isDefined )
-          assert( nodes.contains( n.getL().get ), "HashSet should contain L" )
-        if ( n.getR().isDefined )
-          assert( nodes.contains( n.getR().get ), "HashSet should contain R" )
-        for ( p <- n.getParents() )
-          assert( nodes.contains( p ), "HashSet should contain parents" )
-      }
       (  0 until innerLoopSize ).par.foreach( j => {
 
         val applyIfIncrease = Random.nextDouble >= threshold
@@ -489,7 +479,6 @@ object AnnealingSolver {
                 successCount.incrementAndGet()
               }
             }
-            lockRes._2.map( n => n.unlockNode() )
           } else  {
             // check if have to do split instead of swap
             if ( nSwap.getParents().size > 1 || nOther.getParents.size > 1 ) {
@@ -514,7 +503,6 @@ object AnnealingSolver {
                   successCount.incrementAndGet()
                 }
               }
-              lockRes._2.map( n => n.unlockNode() )
             } else { // else swap
               val res = performSwap( node, nSwap, nOther, applyIfIncrease )
               if ( res.size > 0 ) {
@@ -531,9 +519,9 @@ object AnnealingSolver {
                 res.drop(1).map( n => n.unlockNode() ) // only unlock new nodes
                 successCount.incrementAndGet()
               }
-              lockRes._2.map( n => n.unlockNode() )
             }
           }
+          lockRes._2.map( n => n.unlockNode() )
         }
       })
       println( "SuccessCount = " + successCount.get() )
