@@ -96,6 +96,32 @@ object Node {
     false
   }
 
+  /** Check that there are no extra numbers being put in there
+    */
+  def isMinimal( n : Node ) : Boolean = {
+    val parents = n.getParents()
+    val nUk = n.getUkNext()
+    val nCk = n.getCkNext()
+    // find out which mux have n as input and which cycle
+    val ckPar = parents.map( p => {
+      if ( p.isA() )
+        p.ck
+      else {
+        p.ck.zip( nCk ).map( cks => {
+          if ( cks._1 == -1 || cks._2 == -1 )
+            -1
+          else if ( p.uk( cks._1 ) == nUk( cks._2 ) )
+            cks._1
+          else
+            -1
+        })
+      }
+    })
+    !( 0 until nCk.size ).find( idx => {
+      nCk(idx) != -1 && !ckPar.find( p => p(idx) != -1 ).isDefined
+    }).isDefined
+  }
+
   /** Check that this node satisfies constraints
     * Also check lNode, rNode and parents
    */
@@ -108,9 +134,11 @@ object Node {
       return false
     if ( n.getParents().size > 0 ) {
       val violated = n.getParents().find( np => {
-        !satisfiesConstraints( np )
+        !satisfiesConstraints( np ) || np.isC()
       }).isDefined
-      return !violated
+      if ( violated )
+        return false
+      return isMinimal( n )
     }
     true
   }

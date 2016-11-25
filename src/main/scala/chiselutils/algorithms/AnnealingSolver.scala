@@ -438,24 +438,26 @@ object AnnealingSolver {
       // decay the likelihood of performing an operation that makes the solution worse
       val threshold = (1 - math.exp( A*i ))/0.99
       val currTime = System.currentTimeMillis()
-      println( "progress = " + (i*iterPer ) + "%, threshold = " + threshold +
+      println( "progress = " + (i*innerLoopSize) + "/" + iter + " = " + (i/iterPer) + "%, threshold = " + threshold +
         ", cost = " + nodes.size + ", time = " + (( currTime - oldTime ).toDouble/60000) + " mins")
       oldTime = currTime
       val mergeCount = new java.util.concurrent.atomic.AtomicInteger()
       val splitCount = new java.util.concurrent.atomic.AtomicInteger()
       val swapCount = new java.util.concurrent.atomic.AtomicInteger()
-      for ( n <- nodes ) {
+      nodes.par.foreach( n => {
         assert( !n.isLocked(), "should not be locked here" )
+        assert( Node.satisfiesConstraints( n ), "Node must satisfy constraints" )
         if ( n.getL().isDefined )
           assert( nodes.contains( n.getL().get ), "L must be in set" )
         if ( n.getR().isDefined )
           assert( nodes.contains( n.getL().get ), "R must be in set" )
+        if ( n.getParents().size > 0 )
+          assert( Node.isMinimal( n ), "Node should be minimal" )
         for ( p <- n.getParents() )
           assert( nodes.contains( p ), "Parents must be in set" )
-      }
+      })
       (  0 until innerLoopSize ).par.foreach( j => {
 
-        val applyIfIncrease = Random.nextDouble >= threshold
         // pick a node randomally, lock it and the ones around it
         val tmpSync = nodes.synchronized {
           val nRand = Random.nextInt(nodes.size)
@@ -472,6 +474,8 @@ object AnnealingSolver {
         if ( !node.isC() && lockRes._1 ) {
 
           // choose operation to perform
+          val applyIfIncrease = Random.nextDouble >= threshold
+
           val chooseMerge = Random.nextInt( 2 ) == 0
           val chooseL = Random.nextInt( 2 ) == 0
           val nSwap = {
