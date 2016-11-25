@@ -225,10 +225,13 @@ object AnnealingSolver {
   /** Lock nodes needed
     * Need to lock in order to ensure that the node cant change
     */
-  private def acquireLocks( node : Node ) : (Boolean, Set[Node]) = {
-    if ( node.isC() )
+  private def acquireLocks( node : Node, lockRes : Boolean ) : (Boolean, Set[Node]) = {
+    if ( node.isC() ) {
+      if ( lockRes )
+        node.unlockNode()
       return ( false, Set[Node]() )
-    val lockRes = node.lockNode()
+    }
+
     if ( !lockRes )
       return (false, Set[Node]())
     assert( node.getL().isDefined && node.getR().isDefined, "Node " + node + " is invalid" )
@@ -275,8 +278,8 @@ object AnnealingSolver {
     // lock parents of node, nodeL and nodeR
     val lockPar = lockNodes( node.getParents() ++ nodeL.getParents() ++ nodeR.getParents(), nodesLocked.toSet )
     if ( !lockPar._1 ) {
-        nodesLocked.map( n => n.unlockNode() )
-        return (false, Set[Node]())
+      nodesLocked.map( n => n.unlockNode() )
+      return (false, Set[Node]())
     }
     nodesLocked ++= lockPar._2
 
@@ -438,8 +441,11 @@ object AnnealingSolver {
       println( "progress = " + (i*iterPer ) + "%, threshold = " + threshold +
         ", cost = " + nodes.size + ", time = " + (( currTime - oldTime ).toDouble/60000) + " mins")
       oldTime = currTime
-      val successCount = new java.util.concurrent.atomic.AtomicInteger()
+      val mergeCount = new java.util.concurrent.atomic.AtomicInteger()
+      val splitCount = new java.util.concurrent.atomic.AtomicInteger()
+      val swapCount = new java.util.concurrent.atomic.AtomicInteger()
       for ( n <- nodes ) {
+        assert( !n.isLocked(), "should not be locked here" )
         if ( n.getL().isDefined )
           assert( nodes.contains( n.getL().get ), "L must be in set" )
         if ( n.getR().isDefined )
@@ -455,12 +461,13 @@ object AnnealingSolver {
           val nRand = Random.nextInt(nodes.size)
           val it = nodes.iterator.drop(nRand)
           val node = it.next
-          val lockRes = acquireLocks( node )
-          ( node, lockRes )
+          val nodeLock = node.lockNode()
+          ( node, nodeLock )
         }
 
         val node = tmpSync._1
-        val lockRes = tmpSync._2
+        val nodeLock = tmpSync._2
+        val lockRes = acquireLocks( node, nodeLock )
 
         if ( !node.isC() && lockRes._1 ) {
 
@@ -508,7 +515,7 @@ object AnnealingSolver {
                   res.get.unlockNode()
                 }
                 parLocks._2.map( n => n.unlockNode() )
-                successCount.incrementAndGet()
+                mergeCount.incrementAndGet()
               }
             }
           } else  {
@@ -532,7 +539,7 @@ object AnnealingSolver {
                     nodes ++= nodeList
                   }
                   nodeList.map( n => n.unlockNode() )
-                  successCount.incrementAndGet()
+                  splitCount.incrementAndGet()
                 }
               }
             } else { // else swap
@@ -549,14 +556,16 @@ object AnnealingSolver {
                   nodes ++= res.drop(1)
                 }
                 res.drop(1).map( n => n.unlockNode() ) // only unlock new nodes
-                successCount.incrementAndGet()
+                swapCount.incrementAndGet()
               }
             }
           }
           lockRes._2.map( n => n.unlockNode() )
         }
       })
-      println( "SuccessCount = " + successCount.get() )
+      println( "mergeCount = " + mergeCount.get() )
+      println( "splitCount = " + splitCount.get() )
+      println( "swapCount = " + swapCount.get() )
     }
     HashSet[Node]() ++ nodes
   }
