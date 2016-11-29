@@ -135,9 +135,17 @@ object Transforms {
 
   /** pass ck through the ckFilter so that cks with other parents aren't included
     */
+  private def filterCk( ck : List[Int], uk : List[Set[Vector[Int]]], ckFilter : List[Int], ukFilter : List[Set[Vector[Int]]] ) : List[Int] = {
+    val mapping = ukFilter.map( uki => if ( uki != -1 ) uk.indexOf( uki ) else -1 )
+    ckFilter.map( cki => if ( cki != -1 ) mapping( cki ) else -1 ).zip( ck ).map( cks => if ( cks._1 == -1 ) -1 else cks._2 )
+  }
+
+  /** ignore uks, useful for adds with no other parents
+    */
   private def filterCk( ck : List[Int], ckFilter : List[Int] ) : List[Int] = {
     ckFilter.zip( ck ).map( cks => if ( cks._1 == -1 ) -1 else cks._2 )
   }
+
 
   /** nSwap satisfies constraintA, nPar satisfies constraintB
     * nPar.lNode = nSwap
@@ -152,16 +160,14 @@ object Transforms {
     */
   private def swapCase1( nPar : Node, nSwap : Node ) : List[Node] = {
     val nodeAuK = nSwap.getL().get.getUkNext()
-    val nodeAcK = nSwap.getL().get.getCkNext()
-    val nodeAcKFiltered = nodeAcK.zip( nSwap.ck ).map( z => if ( z._2 == -1 ) -1 else z._1 )
+    val nodeAcKFiltered = filterCk( nSwap.getL().get.getCkNext(), nSwap.ck )
 
     val nodeA = Node( nodeAuK, nodeAcKFiltered )
     nodeA.setL( nSwap.getL() )
     nodeA.setR( nSwap.getL() )
     nodeA.setB()
     val nodeBuK = nSwap.getR().get.getUkNext()
-    val nodeBcK = nSwap.getR().get.getCkNext()
-    val nodeBcKFiltered = nodeBcK.zip( nSwap.ck ).map( z => if ( z._2 == -1 ) -1 else z._1 )
+    val nodeBcKFiltered = filterCk( nSwap.getR().get.getCkNext(), nSwap.ck )
 
     val nodeB = Node( nodeBuK, nodeBcKFiltered )
     nodeB.setL( nSwap.getR() )
@@ -186,9 +192,25 @@ object Transforms {
     * nodeB.rNode = nSwap.rNode
     */
   private def swapCase2( nPar : Node, nSwap : Node ) : List[Node] = {
-    val nodeList = swapCase1( nPar, nSwap ) // same as nPar holds the add/mux info
+    val nodeAuK = nSwap.getL().get.getUkNext()
+    val nodeAcKFiltered = filterCk( nSwap.getL().get.getCkNext(), nodeAuK, nSwap.ck, nSwap.uk )
+
+    val nodeA = Node( nodeAuK, nodeAcKFiltered )
+    nodeA.setL( nSwap.getL() )
+    nodeA.setR( nSwap.getL() )
+    nodeA.setB()
+    val nodeBuK = nSwap.getR().get.getUkNext()
+    val nodeBcKFiltered = filterCk( nSwap.getR().get.getCkNext(), nodeBuK, nSwap.ck, nSwap.uk )
+
+    val nodeB = Node( nodeBuK, nodeBcKFiltered )
+    nodeB.setL( nSwap.getR() )
+    nodeB.setR( nSwap.getR() )
+    nodeB.setB()
+
+    nPar.setL( Some(nodeA) )
+    nPar.setR( Some(nodeB) )
     nPar.setB()
-    nodeList
+    List( nPar, nodeA, nodeB )
   }
 
   /** nSwap satisfies constraintB, nPar satisfies constraintA, nOther satisfies constraintA
@@ -208,16 +230,17 @@ object Transforms {
     // nSwap must be the reg by itself
     // rotate so that nOther.rNode + nSwap.lNode and nOther.lNode is reg
 
-    val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
     val otherLuK = nOther.getL().get.getUkNext()
+    val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
+
     val nodeA = Node( otherLuK, otherLcK )
     nodeA.setL( nOther.getL() )
     nodeA.setR( nOther.getL() )
     nodeA.setB()
 
     // find distinct ck combinations
-    val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.ck )
     val otherRuK = nOther.getR().get.getUkNext()
+    val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.ck )
     val swapuK = nSwap.uk
     val swapcK = nSwap.ck
 
@@ -283,9 +306,9 @@ object Transforms {
     */
   private def swapCase6( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
 
-    val othercK = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
+    val othercK = filterCk( nOther.getL().get.getCkNext(), nOther.getL().get.getUkNext(), nOther.ck, nOther.uk )
     val otheruK = nOther.getL().get.getUkNext()
-    val swapcK = filterCk( nSwap.getL().get.getCkNext(), nSwap.ck )
+    val swapcK = filterCk( nSwap.getL().get.getCkNext(), nSwap.getL().get.getUkNext(), nSwap.ck, nSwap.uk )
     val swapuK = nSwap.getL().get.getUkNext()
     val combAdd = combineAdd( otheruK, othercK, swapuK, swapcK )
     val nodeA = Node( combAdd._1, combAdd._2 )
@@ -313,15 +336,14 @@ object Transforms {
     */
   private def swapCase7( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
 
-    val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
+    val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.getL().get.getUkNext(), nOther.ck, nOther.uk )
     val otherLuK = nOther.getL().get.getUkNext()
-    val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.ck )
+    val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.getR().get.getUkNext(), nOther.ck, nOther.uk )
     val otherRuK = nOther.getR().get.getUkNext()
     val swapcKL = filterCk( nSwap.ck, otherLcK )
     val swapcKR = filterCk( nSwap.ck, otherRcK )
-    val swapuK = nSwap.uk
-    val combAddL = combineAdd( otherLuK, otherLcK, swapuK, swapcKL )
-    val combAddR = combineAdd( otherRuK, otherRcK, swapuK, swapcKR )
+    val combAddL = combineAdd( otherLuK, otherLcK, nSwap.uk, swapcKL )
+    val combAddR = combineAdd( otherRuK, otherRcK, nSwap.uk, swapcKR )
     val nodeA = Node( combAddL._1, combAddL._2 )
     nodeA.setL( nOther.getL() )
     nodeA.setR( nSwap.getL() )
@@ -349,9 +371,9 @@ object Transforms {
     */
   private def swapCase10( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
 
-    val othercK = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
+    val othercK = filterCk( nOther.getL().get.getCkNext(), nOther.getL().get.getUkNext(), nOther.ck, nOther.uk )
     val otheruK = nOther.getL().get.getUkNext()
-    val swapcK = filterCk( nSwap.getL().get.getCkNext(), nSwap.ck )
+    val swapcK = filterCk( nSwap.getL().get.getCkNext(), nSwap.getL().get.getUkNext(), nSwap.ck, nSwap.uk )
     val swapuK = nSwap.getL().get.getUkNext()
     val combMux = combineMux( otheruK, othercK, swapuK, swapcK )
     val nodeA = Node( combMux._1, combMux._2 )
@@ -396,10 +418,8 @@ object Transforms {
       val ckComb = nSwap.ck.zip( nOther.ck ).map( cks => {
         if ( cks._1 == -1 )
           cks._2
-        else {
-          assert( cks._2 == -1, "Only one should be empty as followed my mux with " + nSwap + " and " + nOther )
+        else
           cks._1
-        }
       })
       val nodeAcK = filterCk( nodeAcKUp, ckComb )
       val nodeA = Node( nodeAuK, nodeAcK )
@@ -437,10 +457,10 @@ object Transforms {
     */
   private def swapCase12( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
 
-    val otherLFiltered = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
-    val otherRFiltered = filterCk( nOther.getR().get.getCkNext(), nOther.ck )
-    val swapLFiltered = filterCk( nSwap.getL().get.getCkNext(), nSwap.ck )
-    val swapRFiltered = filterCk( nSwap.getR().get.getCkNext(), nSwap.ck )
+    val otherLFiltered = filterCk( nOther.getL().get.getCkNext(), nOther.getL().get.getUkNext(), nOther.ck, nOther.uk )
+    val otherRFiltered = filterCk( nOther.getR().get.getCkNext(), nOther.getR().get.getUkNext(), nOther.ck, nOther.uk )
+    val swapLFiltered = filterCk( nSwap.getL().get.getCkNext(), nSwap.getL().get.getUkNext(), nSwap.ck, nSwap.uk )
+    val swapRFiltered = filterCk( nSwap.getR().get.getCkNext(), nSwap.getR().get.getUkNext(), nSwap.ck, nSwap.uk )
     val nodeAComb = combineMux( nOther.getL().get.getUkNext(), otherLFiltered,
       nSwap.getL().get.getUkNext(), swapLFiltered )
     val nodeBComb = combineMux( nOther.getR().get.getUkNext(), otherRFiltered,
@@ -473,15 +493,15 @@ object Transforms {
     */
   private def swapCase13( nPar : Node, nSwap : Node, nOther : Node ) : List[Node] = {
 
-    val otherLcK = filterCk( nOther.getL().get.getCkNext(), nOther.ck )
     val otherLuK = nOther.getL().get.getUkNext()
+    val otherLcK = filterCk( nOther.getL().get.getCkNext(), otherLuK, nOther.ck, nOther.uk )
     val nodeA = Node( otherLuK, otherLcK )
     nodeA.setL( nOther.getL() )
     nodeA.setR( nOther.getL() )
     nodeA.setB()
     // find distinct ck combinations
-    val otherRcK = filterCk( nOther.getR().get.getCkNext(), nOther.ck )
     val otherRuK = nOther.getR().get.getUkNext()
+    val otherRcK = filterCk( nOther.getR().get.getCkNext(), otherRuK, nOther.ck, nOther.uk )
     val swapuK = nSwap.uk
     val swapcK = nSwap.ck
 
