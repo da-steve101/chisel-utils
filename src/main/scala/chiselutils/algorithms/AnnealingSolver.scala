@@ -452,7 +452,7 @@ object AnnealingSolver {
         if ( n.getR().isDefined )
           assert( nodes.contains( n.getL().get ), "R must be in set" )
         if ( n.getParents().size > 0 )
-          assert( Node.isMinimal( n ), "Node should be minimal" )
+          assert( Node.isMinimal( n ), "Node " + n + " should be minimal" )
         for ( p <- n.getParents() )
           assert( nodes.contains( p ), "Parents must be in set" )
       })
@@ -559,6 +559,7 @@ object AnnealingSolver {
                   nodes -= nOther
                   nodes ++= res.drop(1)
                 }
+                res.filter( n => n.getParents.size > 0 ).foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
                 res.drop(1).map( n => n.unlockNode() ) // only unlock new nodes
                 swapCount.incrementAndGet()
               }

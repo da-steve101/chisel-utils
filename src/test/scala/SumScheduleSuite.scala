@@ -638,7 +638,7 @@ class SumScheduleSuite extends TestSuite {
       cSet._1.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) })
     })
     var nodes = AnnealingSolver.init( List( cp ) )._1
-    nodes = AnnealingSolver.runPar( nodes, 10000000 )
+    nodes = AnnealingSolver.runPar( nodes, 100000000, 1000000 )
     assert( testLinks( nodes ), "Nodes must be connected properly" )
     for ( n <- nodes )
       assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
@@ -669,8 +669,6 @@ class SumScheduleSuite extends TestSuite {
         })
       })
     }
-    for ( convFilt <- convFilter )
-      assert( convFilt(1)(1)(1) == 1, "Mid must be 1" )
 
     val cp = ( 0 until filterSize._4 ).map( convIdx => { // for each filter
       ( 0 until imgSize._2 ).map( y => { // for each column in the img
@@ -682,10 +680,10 @@ class SumScheduleSuite extends TestSuite {
                 val ypy = y + py - (filterSize._2/2)
                 ( xpx, ypy, px, py, d )
               }).filter{ case ( xpx, ypy, px, py, d ) => { // filter out zeros and any edge parts
-                val isZero = ( convFilter( convIdx )(px)(py)(d) == 0 )
+                val isZero = ( convFilter( convIdx )(py)(px)(d) == 0 )
                 ( xpx >= 0 && xpx < imgSize._1 && ypy >= 0 && ypy < imgSize._2 && !isZero )
               }}.map{ case ( xpx, ypy, px, py, d ) => {
-                val addIdx = if ( convFilter( convIdx )(px)(py)(d) == 1 ) 1 else 0
+                val addIdx = if ( convFilter( convIdx )(py)(px)(d) == 1 ) 1 else 0
                 Vector( ypy*imgSize._2 + xpx, (2*d) + addIdx )
               }}.toSet
             }).reduce( _ ++ _ ) // sum over filter cols
@@ -721,4 +719,98 @@ class SumScheduleSuite extends TestSuite {
     println( "cost = " + nodes.size )
   }
 
+  @Test def minimalTest {
+    // Node@224625879(B)
+    val node = Node( List(Set(Vector(11, 1), Vector(10, 1)), Set(Vector(11, 1)), Set(Vector(11, 1), Vector(6, 0))), List(-1, -1, -1, 2, -1, -1, -1, -1, 2, -1, -1, -1, -1, 2, -1, -1, -1, -1, 2, 0, 0, 0, 0, 1, -1) )
+    node.setB()
+    // Node@758935928(B)
+    val nSwap = Node( List(Set(Vector(10, 1)), Set(Vector(10, 1), Vector(5, 0))), List(-1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, 0, -1, -1) )
+    nSwap.setB()
+    // Node@209082060(B)
+    val nOther = Node( List(Set(Vector(10, 1), Vector(9, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1) )
+    nOther.setB()
+    // Node@1750422405(B)
+    val nodePar = Node( List(Set(Vector(12, 1), Vector(7, 0), Vector(11, 1), Vector(6, 1)), Set(Vector(12, 1), Vector(7, 0)), Set(Vector(12, 1), Vector(11, 1)), Set(Vector(12, 1))), List(0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 2, 2, 2, 2, 3) )
+    nodePar.setB()
+
+    val nSwapPar = List( node )
+    val nOtherPar = List( node )
+    val nodeL = nOther
+    val nodeR = nSwap
+    // Node@1581619835(B)
+    val nSwapL = Node( List(Set(Vector(9, 1), Vector(4, 0))), List(-1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1) )
+    nSwapL.setB()
+    // Node@821299933(B)
+    val nSwapR = Node( List(Set(Vector(9, 1))), List(-1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1) )
+    nSwapR.setB()
+    // Node@103207052(A)
+    val nOtherL = Node( List(Set(Vector(9, 1), Vector(8, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1, -1) )
+    nOtherL.setA()
+    // Node@103207052(A)
+    val nOtherR = nOtherL
+
+    nodePar.setL( Some(node) )
+    node.setL( Some(nOther) )
+    node.setR( Some(nSwap) )
+    nSwap.setL( Some(nSwapL) )
+    nSwap.setR( Some(nSwapR) )
+    nOther.setL( Some(nOtherL) )
+    nOther.setR( Some(nOtherR) )
+
+    val nodeList = List( node, nSwap, nOther )
+    for ( n <- nodeList )
+      assert( Node.isMinimal( n ), "node " + n + " should be minimal" )
+
+    val res = Transforms.trySwap( node, nSwap, true )
+
+    // clean up parents of merged nodes
+    nSwap.setL( None )
+    nSwap.setR( None )
+    nOther.setL( None )
+    nOther.setR( None )
+
+    res.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
+  }
+
+  @Test def minimalTest2 {
+    // Node@1736012577(B)
+    val node = Node( List(Set(Vector(10, 1), Vector(6, 1), Vector(5, 1)), Set(Vector(6, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 1, -1, -1, -1, -1, -1, -1) )
+    node.setB()
+    // Node@929306827(B)
+    val nSwap = Node( List(Set(Vector(5, 1), Vector(4, 1), Vector(9, 1)), Set(Vector(5, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 1, -1, -1, -1, -1, -1, -1, -1) )
+    nSwap.setB()
+    // Node@929306827(B)
+    val nOther = nSwap
+
+    // Node@2069863558(B)
+    val nodePar = Node( List(Set(Vector(11, 1), Vector(7, 1), Vector(6, 1)), Set(Vector(7, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 1, -1, -1, -1, -1, -1) )
+    nodePar.setB()
+    // Node@1521934339(B)
+    val nSwapL =  Node( List(Set(Vector(4, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1) )
+    nSwapL.setB()
+    // Node@2009145978(A)
+    val nSwapR = Node( List(Set(Vector(4, 1), Vector(3, 1), Vector(8, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
+    nSwapR.setA()
+
+    nodePar.setL( Some(node) )
+    node.setL( Some( nSwap ) )
+    node.setR( Some( nOther ) )
+    nSwap.setL( Some(nSwapL) )
+    nSwap.setR( Some(nSwapR) )
+
+    val nodeList = List( node, nSwap, nOther )
+    for ( n <- nodeList )
+      assert( Node.isMinimal( n ), "node " + n + " should be minimal" )
+
+    val res = Transforms.trySwap( node, nSwap, true )
+
+    // clean up parents of merged nodes
+    nSwap.setL( None )
+    nSwap.setR( None )
+    nOther.setL( None )
+    nOther.setR( None )
+
+    res.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
+
+  }
 }
