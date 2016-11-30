@@ -11,7 +11,7 @@ object Node {
 
   /** Look up an index with a mapping
     */
-  private def mapIdx( mapping : List[Int], idx : Int ) = {
+  private def mapIdx( mapping : Seq[Int], idx : Int ) = {
     if ( idx == -1 )
       idx
     else
@@ -20,7 +20,7 @@ object Node {
 
   /** Create a node cp coords
     */
-  def apply( nodeVals : List[Set[Vector[Int]]] ) : Node = {
+  def apply( nodeVals : Seq[Set[Seq[Int]]] ) : Node = {
     val uk = nodeVals.distinct.filter( _.size != 0 )
     val ck = nodeVals.map( uk.indexOf( _ ) )
     apply( uk, ck )
@@ -28,7 +28,7 @@ object Node {
 
   /** Create a node from compressed cp coords
     */
-  def apply( uk : List[Set[Vector[Int]]], ck : List[Int] ) : Node = {
+  def apply( uk : Seq[Set[Seq[Int]]], ck : Seq[Int] ) : Node = {
     val dim = uk.head.iterator.next.size
     val nodeSize = ck.size
     // ensure uk is sorted
@@ -38,6 +38,14 @@ object Node {
     val ckOut = ck.map( cki => mapIdx( mapping, cki ) )
     val n = new Node( dim, nodeSize, ukOut, ckOut )
     n
+  }
+
+  def apply( uk : List[Set[Seq[Int]]], ck : Seq[Int] ) : Node = {
+    Node( uk.to[Seq], ck )
+  }
+
+  def apply( uk : Vector[Set[Seq[Int]]], ck : Seq[Int] ) : Node = {
+    Node( uk.to[Seq], ck )
   }
 
   /** Check if a node satisfies constraint A
@@ -143,16 +151,16 @@ object Node {
     true
   }
 
-  def ukPrev( uk : List[Set[Vector[Int]]] ) : List[Set[Vector[Int]]] = {
-    uk.map( uki => uki.map( v => { Vector( v(0) - 1 ) ++ v.drop(1) }))
+  def ukPrev( uk : Seq[Set[Seq[Int]]] ) : Seq[Set[Seq[Int]]] = {
+    uk.map( uki => uki.map( v => { List( v(0) - 1 ) ++ v.drop(1) }.to[Seq]))
   }
-  def ukNext( uk : List[Set[Vector[Int]]] ) : List[Set[Vector[Int]]] = {
-    uk.map( uki => uki.map( v => { Vector( v(0) + 1 ) ++ v.drop(1) }))
+  def ukNext( uk : Seq[Set[Seq[Int]]] ) : Seq[Set[Seq[Int]]] = {
+    uk.map( uki => uki.map( v => { List( v(0) + 1 ) ++ v.drop(1) }.to[Seq] ))
   }
 
 }
 
-class Node( val dim : Int, val nodeSize : Int, val uk : List[Set[Vector[Int]]], val ck : List[Int] ) {
+class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
 
   assert( dim >= 1, "The dimension of p must be atleast 1" )
 
@@ -163,16 +171,16 @@ class Node( val dim : Int, val nodeSize : Int, val uk : List[Set[Vector[Int]]], 
   private val available = new AtomicBoolean( false );
 
   def getModIdx( i : Int ) : Int = { ck( ( i + nodeSize - 1 ) % nodeSize ) }
-  def getModSet( i : Int ) : Set[Vector[Int]] = {
+  def getModSet( i : Int ) : Set[Seq[Int]] = {
     val idx = getModIdx( i )
     if ( idx == -1 )
-      return Set[Vector[Int]]()
+      return Set[Seq[Int]]()
     uk( idx )
   }
 
-  private def getP0( p : Vector[Int] ) = p.head
-  private def incr( p : Vector[Int] ) : Vector[Int] = Vector( p.head + 1 ) ++ p.drop(1)
-  private def incr( q : Set[Vector[Int]] )  : Set[Vector[Int]] = q.map( incr(_) )
+  private def getP0( p : Seq[Int] ) = p.head
+  private def incr( p : Seq[Int] ) : Seq[Int] = List( p.head + 1 ) ++ p.drop(1)
+  private def incr( q : Set[Seq[Int]] )  : Set[Seq[Int]] = q.map( incr(_) )
 
   def isLocked() = !available.get()
   def unlockNode() = {
@@ -200,17 +208,17 @@ class Node( val dim : Int, val nodeSize : Int, val uk : List[Set[Vector[Int]]], 
       "_"
   }
 
-  def getCkPrev() = { ck.drop(1).toList ++ ck.take(1).toList }
-  def getCkNext() = { ck.takeRight(1).toList ++ ck.dropRight(1).toList }
-  def getUki( i : Int ) : Set[Vector[Int]] = {
+  def getCkPrev() = { ck.drop(1) ++ ck.take(1) }
+  def getCkNext() = { ck.takeRight(1) ++ ck.dropRight(1) }
+  def getUki( i : Int ) : Set[Seq[Int]] = {
     if ( i == -1 )
-      return Set[Vector[Int]]()
+      return Set[Seq[Int]]()
     uk( i )
   }
-  def getCki( i : Int ) : Set[Vector[Int]] = getUki( ck( i ) )
+  def getCki( i : Int ) : Set[Seq[Int]] = getUki( ck( i ) )
 
-  def getUkPrev() = { uk.toList.map( uki => uki.map( v => { Vector( v(0) - 1 ) ++ v.drop(1) })) }
-  def getUkNext() = { uk.toList.map( uki => uki.map( v => { Vector( v(0) + 1 ) ++ v.drop(1) })) }
+  def getUkPrev() : Seq[Set[Seq[Int]]] = { uk.map( uki => uki.map( v => { List( v(0) - 1 ) ++ v.drop(1) }.to[Seq] )) }
+  def getUkNext() : Seq[Set[Seq[Int]]] = { uk.map( uki => uki.map( v => { List( v(0) + 1 ) ++ v.drop(1) }.to[Seq] )) }
   def getL() = { lNode }
   def getR() = { rNode }
   def setL( n : Option[Node] ) = {
@@ -229,8 +237,8 @@ class Node( val dim : Int, val nodeSize : Int, val uk : List[Set[Vector[Int]]], 
     if ( n.isDefined )
       n.get.addParent( this )
   }
-  def getParents() = parents.toList
-  def getParentSet() = parents.toSet
+  def getParents() : Seq[Node] = parents.toVector
+  def getParentSet() : Set[Node] = parents.toSet
   def intersectPar( otherP : Set[Node] ) = { otherP.intersect( parents.toSet ) }
   private def addParent( n : Node ) = {
     assert( isLocked(), "Node should be locked to add parent" )

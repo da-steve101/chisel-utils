@@ -6,23 +6,35 @@ import scala.collection.mutable.ArrayBuffer
 import chiselutils.algorithms.Node
 import chiselutils.algorithms.Transforms
 import chiselutils.algorithms.AnnealingSolver
-import scala.collection.immutable.HashSet
 
 class SumScheduleSuite extends TestSuite {
 
   val myRand = new Random
   val dim = 2
   val nodeSize = 20
+  val maxVal = 10
 
-  def decr( uk : List[Set[Vector[Int]]] ) : List[Set[Vector[Int]]] = {
-    uk.map( s => s.map( v => { Vector( v(0) - 1 ) ++ v.drop(1) }))
+  def genUk( noUk : Int, setSize : Int ) : Seq[Set[Seq[Int]]] = {
+    Vector.fill( noUk ) { List.fill( setSize ) { List.fill( dim ) { myRand.nextInt( maxVal ) + 1 }.to[Seq]}.to[Set] }
   }
 
-  def incr( uk : List[Set[Vector[Int]]] ) : List[Set[Vector[Int]]] = {
-    uk.map( s => s.map( v => { Vector( v(0) + 1 ) ++ v.drop(1) }))
+  def genTermUk( x : Int  ) : Seq[Set[Seq[Int]]] = {
+    Vector(  List( (List( 0 ) ++ List.fill( dim - 1 ) { x }).to[Seq] ).to[Set] )
   }
 
-  def testLinks( nodes : HashSet[Node] ) : Boolean = {
+  def genCk( noUk : Int ) : Seq[Int] = {
+    Vector.fill( nodeSize ) { myRand.nextInt( noUk + 1 ) - 1 }
+  }
+
+  def decr( uk : Seq[Set[Seq[Int]]] ) : Seq[Set[Seq[Int]]] = {
+    uk.map( s => s.map( v => { Vector( v(0) - 1 ) ++ v.drop(1) }.to[Seq]))
+  }
+
+  def incr( uk : Seq[Set[Seq[Int]]] ) : Seq[Set[Seq[Int]]] = {
+    uk.map( s => s.map( v => { Vector( v(0) + 1 ) ++ v.drop(1) }.to[Seq]))
+  }
+
+  def testLinks( nodes : Set[Node] ) : Boolean = {
     for ( n <- nodes ) {
       if ( n.getL().isDefined ) {
         if ( !nodes.contains( n.getL().get ) ) {
@@ -89,15 +101,12 @@ class SumScheduleSuite extends TestSuite {
   /** Test the sum constraint
     */
   @Test def testConstraintA {
-    val noUk = 5
-    val setSize = 5
-    val maxVal = 10
-    val nodeAuK = List.fill( noUk ) { List.fill( setSize ) { Vector.fill( dim ) { myRand.nextInt( maxVal ) + 1 }}.toSet }
-    val nodeAcK = List.fill( nodeSize ) { myRand.nextInt( noUk ) }
+    val nodeAuK = genUk( 5, 5 )
+    val nodeAcK = genCk( 5 )
     val nodeA = Node( nodeAuK, nodeAcK )
     val nodeBCuK = nodeAuK.map( uki => {
-      val listB = ArrayBuffer[Vector[Int]]()
-      val listC = ArrayBuffer[Vector[Int]]()
+      val listB = ArrayBuffer[Seq[Int]]()
+      val listC = ArrayBuffer[Seq[Int]]()
       for ( s <- uki ) {
         if ( listB.isEmpty || ( myRand.nextInt( 2 ) == 0 && !listC.isEmpty )  )
           listB += s
@@ -117,11 +126,8 @@ class SumScheduleSuite extends TestSuite {
     * NB: this test will fail if you get unlucky and all mux on oneside (other is empty)
     */
   @Test def testConstraintB {
-    val noUk = 5
-    val setSize = 5
-    val maxVal = 10
-    val nodeAuK = List.fill( noUk ) { List.fill( setSize ) { Vector.fill( dim ) { myRand.nextInt( maxVal ) + 1 }}.toSet }
-    val nodeAcK = List.fill( nodeSize ) { myRand.nextInt( noUk ) }
+    val nodeAuK = genUk( 5, 5 )
+    val nodeAcK = genCk( 5 )
     val nodeA = Node( nodeAuK, nodeAcK )
     val muxSwitch = nodeAuK.map( uki => myRand.nextInt( 2 ) )
     val shiftCk = nodeAcK.drop(1) ++ nodeAcK.take(1)
@@ -160,16 +166,16 @@ class SumScheduleSuite extends TestSuite {
   }
 
   @Test def testConstraintC {
-    val nodeAuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 1 } ))
-    val nodeAcK = List.fill( nodeSize ) { myRand.nextInt( 2 ) - 1 }
+    val nodeAuK = genTermUk( 1 )
+    val nodeAcK = genCk( 1 )
     val nodeA = Node( nodeAuK, nodeAcK )
     assert( Node.satisfiesConstraintC( nodeA ) )
   }
 
   @Test def testSwap1 {
-    val nodeAuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 0 } )) // termination setA
-    val nodeBuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 1 } )) // termination setB
-    val node_cK = List.fill( nodeSize ) { myRand.nextInt( 2 ) - 1 }
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val node_cK = genCk( 1 )
     val nodeA = Node( nodeAuK, node_cK )
     nodeA.setC()
     val nodeB = Node( nodeBuK, node_cK )
@@ -197,12 +203,12 @@ class SumScheduleSuite extends TestSuite {
   }
 
   @Test def testSwap2 {
-    val nodeAuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 0 } )) // termination setA
-    val nodeBuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 1 } )) // termination setB
-    val node_cK = List.fill( nodeSize ) { myRand.nextInt( 2 ) }
-    val nodeA = Node( nodeAuK, node_cK.map( -_ ) )
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val node_cK = genCk( 2 )
+    val nodeA = Node( nodeAuK, node_cK.map( x => if ( x == 0 ) 0 else -1 ) )
     nodeA.setC()
-    val nodeB = Node( nodeBuK, node_cK.map( _ - 1 ) )
+    val nodeB = Node( nodeBuK, node_cK.map( x => if ( x == 1 ) 0 else -1 ) )
     nodeB.setC()
     val nodeSwapUk = incr( nodeAuK ++ nodeBuK )
     val nodeSwapCk = node_cK.takeRight( 1 ) ++ node_cK.dropRight( 1 )
@@ -229,10 +235,10 @@ class SumScheduleSuite extends TestSuite {
   }
 
   @Test def testSwap4 {
-    val nodeAuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 0 } )) // termination setA
-    val nodeBuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 1 } )) // termination setB
-    val nodeCuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 2 } )) // termination setC
-    val node_cK = List.fill( nodeSize ) { myRand.nextInt( 2 ) - 1 }
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val nodeCuK = genTermUk( 2 ) // termination setC
+    val node_cK = genCk( 1 )
     val nodeA = Node( nodeAuK, node_cK )
     val nodeB = Node( nodeBuK, node_cK )
     val nodeC = Node( nodeCuK, node_cK )
@@ -273,11 +279,11 @@ class SumScheduleSuite extends TestSuite {
   }
 
   @Test def testSwap5 {
-    val nodeAuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 0 } )) // termination setA
-    val nodeBuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 1 } )) // termination setB
-    val nodeCuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 2 } )) // termination setC
-    val nodeDuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 3 } )) // termination setC
-    val nodeParCk = List.fill( nodeSize ) { myRand.nextInt(2) - 1 }
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val nodeCuK = genTermUk( 2 ) // termination setC
+    val nodeDuK = genTermUk( 3 ) // termination setC
+    val nodeParCk = genCk( 1 )
     val node_cK = nodeParCk.drop(2) ++ nodeParCk.take(2)
     val node_cK1 = nodeParCk.drop(1) ++ nodeParCk.take(1)
     val nodeA = Node( nodeAuK, node_cK )
@@ -319,9 +325,9 @@ class SumScheduleSuite extends TestSuite {
   }
 
   @Test def testSwap6 {
-    val nodeAuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 0 } )) // termination setA
-    val nodeBuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 1 } )) // termination setB
-    val node_cK = List.fill( nodeSize ) { myRand.nextInt( 2 ) - 1 }
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val node_cK = genCk( 1 )
     val nodeA = Node( nodeAuK, node_cK )
     val nodeB = Node( nodeBuK, node_cK )
     nodeA.setC()
@@ -355,10 +361,10 @@ class SumScheduleSuite extends TestSuite {
   }
 
   @Test def testSwap7 {
-    val nodeAuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 0 } )) // termination setA
-    val nodeBuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 1 } )) // termination setB
-    val nodeCuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 2 } )) // termination setC
-    val node_cK = List.fill( nodeSize ) { myRand.nextInt( 2 ) - 1 }
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val nodeCuK = genTermUk( 2 ) // termination setC
+    val node_cK = genCk( 1 )
     val nodeA = Node( nodeAuK, node_cK )
     val nodeB = Node( nodeBuK, node_cK )
     val nodeC = Node( nodeCuK, node_cK )
@@ -397,9 +403,9 @@ class SumScheduleSuite extends TestSuite {
   }
 
   @Test def testSwap10 {
-    val nodeAuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 0 } )) // termination setA
-    val nodeBuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 1 } )) // termination setB
-    val nodeParCk = List.fill( nodeSize ) { myRand.nextInt( 3 ) - 1 }
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val nodeParCk = genCk( 2 )
     val node_cK = nodeParCk.drop(2) ++ nodeParCk.take(2)
     val nodeA = Node( nodeAuK, node_cK.map( x => if ( x == 0 ) 0 else -1 ) )
     val nodeB = Node( nodeBuK, node_cK.map( x => if ( x == 1 ) 0 else -1 ) )
@@ -433,10 +439,10 @@ class SumScheduleSuite extends TestSuite {
   }
 
   @Test def testSwap11 {
-    val nodeAuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 0 } )) // termination setA
-    val nodeBuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 1 } )) // termination setB
-    val nodeCuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 2 } )) // termination setC
-    val nodeParCk = List.fill( nodeSize ) { myRand.nextInt( 3 ) - 1 }
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val nodeCuK = genTermUk( 2 ) // termination setC
+    val nodeParCk = genCk( 2 )
     val node_cK = nodeParCk.drop(2) ++ nodeParCk.take(2)
     val nodeA = Node( nodeAuK, node_cK.map( x => if ( x == 0 ) 0 else -1 ) )
     val nodeB = Node( nodeBuK, node_cK.map( x => if ( x != -1 ) 0 else -1 ) )
@@ -474,11 +480,11 @@ class SumScheduleSuite extends TestSuite {
   }
 
   @Test def testSwap12 {
-    val nodeAuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 0 } )) // termination setA
-    val nodeBuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 1 } )) // termination setB
-    val nodeCuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 2 } )) // termination setC
-    val nodeDuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 3 } )) // termination setC
-    val nodeParCk = List.fill( nodeSize ) { myRand.nextInt( 5 ) - 1 }
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val nodeCuK = genTermUk( 2 ) // termination setC
+    val nodeDuK = genTermUk( 3 ) // termination setC
+    val nodeParCk = genCk( 4 )
     val node_cK = nodeParCk.drop(2) ++ nodeParCk.take(2)
     val node_cK1 = nodeParCk.drop(1) ++ nodeParCk.take(1)
     val nodeA = Node( nodeAuK, node_cK.map( x => if ( x == 0 ) 0 else -1 ) )
@@ -520,10 +526,10 @@ class SumScheduleSuite extends TestSuite {
   }
 
   @Test def testSwap13 {
-    val nodeAuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 0 } )) // termination setA
-    val nodeBuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 1 } )) // termination setB
-    val nodeCuK = List( Set( Vector( 0 ) ++ Vector.fill( dim - 1 ) { 2 } )) // termination setC
-    val nodeParCk = List.fill( nodeSize ) { myRand.nextInt( 4 ) - 1 }
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val nodeCuK = genTermUk( 2 ) // termination setC
+    val nodeParCk = genCk( 3 )
     val node_cK = nodeParCk.drop(2) ++ nodeParCk.take(2)
     val node_cK1 = nodeParCk.drop(1) ++ nodeParCk.take(1)
     val nodeA = Node( nodeAuK, node_cK.map( x => if ( x == 0 ) 0 else -1 ) )
@@ -646,9 +652,7 @@ class SumScheduleSuite extends TestSuite {
     println( "cost = " + nodes.size )
   }
 
-  @Test def trinaryLayer {
-    val filterSize = ( 3, 3, 3, 128 )
-    val imgSize = ( 32, 32 )
+  def genTrinary( filterSize : (Int, Int, Int, Int), imgSize : (Int, Int ) ) : Set[Node] = {
     val convFilter = List.fill(filterSize._4) {
       ( 0 until filterSize._1).toList.map( f1 => {
         ( 0 until filterSize._2).toList.map( f2 => {
@@ -699,19 +703,30 @@ class SumScheduleSuite extends TestSuite {
     }
     val cpCoords = cp.map( convFilt => {
       convFilt.zipWithIndex.map( cSet => {
-        cSet._1.map( v => Vector( cSet._2 - v(0)) ++ v.drop(1) )
-      })
-    }).toList
+        cSet._1.map( v => {Vector( cSet._2 - v(0)) ++ v.drop(1)}.to[Seq] )
+      }).toVector.to[Seq]
+    }).toVector.to[Seq]
     val latAdd = AnnealingSolver.needLatency( cpCoords )
     println( "latAdd = " + latAdd )
     val cpFinal = cpCoords.map( convFilt => {
       convFilt.zipWithIndex.map( cSet => {
-        cSet._1.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) })
+        cSet._1.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) }.to[Seq])
       })
     })
-    var nodes = AnnealingSolver.init( cpFinal )._1
-    println( "created " + nodes.size + " nodes")
-    nodes = AnnealingSolver.runPar( nodes, 10000000 )
+    AnnealingSolver.init( cpFinal )._1
+  }
+
+  @Test def trinaryLayer {
+    val filterSize = ( 3, 3, 3, 128 )
+    val imgSize = ( 32, 32 )
+    val initNodes = genTrinary( filterSize, imgSize )
+    println( "created " + initNodes.size + " nodes")
+    /*
+    println( "start sleep" )
+    Thread.sleep(1000000)
+    println( "stop sleep" )
+     */
+    val nodes = AnnealingSolver.runPar( initNodes, 10000000 )
     assert( testLinks( nodes ), "Nodes must be connected properly" )
     for ( n <- nodes )
       assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
@@ -721,30 +736,30 @@ class SumScheduleSuite extends TestSuite {
 
   @Test def minimalTest {
     // Node@224625879(B)
-    val node = Node( List(Set(Vector(11, 1), Vector(10, 1)), Set(Vector(11, 1)), Set(Vector(11, 1), Vector(6, 0))), List(-1, -1, -1, 2, -1, -1, -1, -1, 2, -1, -1, -1, -1, 2, -1, -1, -1, -1, 2, 0, 0, 0, 0, 1, -1) )
+    val node = Node( Seq(Set(Seq(11, 1), Seq(10, 1)), Set(Seq(11, 1)), Set(Seq(11, 1), Seq(6, 0))), Seq(-1, -1, -1, 2, -1, -1, -1, -1, 2, -1, -1, -1, -1, 2, -1, -1, -1, -1, 2, 0, 0, 0, 0, 1, -1) )
     node.setB()
     // Node@758935928(B)
-    val nSwap = Node( List(Set(Vector(10, 1)), Set(Vector(10, 1), Vector(5, 0))), List(-1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, 0, -1, -1) )
+    val nSwap = Node( Seq(Set(Seq(10, 1)), Set(Seq(10, 1), Seq(5, 0))), Seq(-1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, 0, -1, -1) )
     nSwap.setB()
     // Node@209082060(B)
-    val nOther = Node( List(Set(Vector(10, 1), Vector(9, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1) )
+    val nOther = Node( Seq(Set(Seq(10, 1), Seq(9, 1))), Seq(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1) )
     nOther.setB()
     // Node@1750422405(B)
-    val nodePar = Node( List(Set(Vector(12, 1), Vector(7, 0), Vector(11, 1), Vector(6, 1)), Set(Vector(12, 1), Vector(7, 0)), Set(Vector(12, 1), Vector(11, 1)), Set(Vector(12, 1))), List(0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 2, 2, 2, 2, 3) )
+    val nodePar = Node( Seq(Set(Seq(12, 1), Seq(7, 0), Seq(11, 1), Seq(6, 1)), Set(Seq(12, 1), Seq(7, 0)), Set(Seq(12, 1), Seq(11, 1)), Set(Seq(12, 1))), Seq(0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 2, 2, 2, 2, 3) )
     nodePar.setB()
 
-    val nSwapPar = List( node )
-    val nOtherPar = List( node )
+    val nSwapPar = Seq( node )
+    val nOtherPar = Seq( node )
     val nodeL = nOther
     val nodeR = nSwap
     // Node@1581619835(B)
-    val nSwapL = Node( List(Set(Vector(9, 1), Vector(4, 0))), List(-1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1) )
+    val nSwapL = Node( Seq(Set(Seq(9, 1), Seq(4, 0))), Seq(-1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1) )
     nSwapL.setB()
     // Node@821299933(B)
-    val nSwapR = Node( List(Set(Vector(9, 1))), List(-1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1) )
+    val nSwapR = Node( Seq(Set(Seq(9, 1))), Seq(-1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1) )
     nSwapR.setB()
     // Node@103207052(A)
-    val nOtherL = Node( List(Set(Vector(9, 1), Vector(8, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1, -1) )
+    val nOtherL = Node( Seq(Set(Seq(9, 1), Seq(8, 1))), Seq(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1, -1) )
     nOtherL.setA()
     // Node@103207052(A)
     val nOtherR = nOtherL
@@ -757,8 +772,8 @@ class SumScheduleSuite extends TestSuite {
     nOther.setL( Some(nOtherL) )
     nOther.setR( Some(nOtherR) )
 
-    val nodeList = List( node, nSwap, nOther )
-    for ( n <- nodeList )
+    val nodeSeq = Seq( node, nSwap, nOther )
+    for ( n <- nodeSeq )
       assert( Node.isMinimal( n ), "node " + n + " should be minimal" )
 
     val res = Transforms.trySwap( node, nSwap, true )
@@ -774,22 +789,22 @@ class SumScheduleSuite extends TestSuite {
 
   @Test def minimalTest2 {
     // Node@1736012577(B)
-    val node = Node( List(Set(Vector(10, 1), Vector(6, 1), Vector(5, 1)), Set(Vector(6, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 1, -1, -1, -1, -1, -1, -1) )
+    val node = Node( Seq(Set(Seq(10, 1), Seq(6, 1), Seq(5, 1)), Set(Seq(6, 1))), Seq(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 1, -1, -1, -1, -1, -1, -1) )
     node.setB()
     // Node@929306827(B)
-    val nSwap = Node( List(Set(Vector(5, 1), Vector(4, 1), Vector(9, 1)), Set(Vector(5, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 1, -1, -1, -1, -1, -1, -1, -1) )
+    val nSwap = Node( Seq(Set(Seq(5, 1), Seq(4, 1), Seq(9, 1)), Set(Seq(5, 1))), Seq(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 1, -1, -1, -1, -1, -1, -1, -1) )
     nSwap.setB()
     // Node@929306827(B)
     val nOther = nSwap
 
     // Node@2069863558(B)
-    val nodePar = Node( List(Set(Vector(11, 1), Vector(7, 1), Vector(6, 1)), Set(Vector(7, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 1, -1, -1, -1, -1, -1) )
+    val nodePar = Node( Seq(Set(Seq(11, 1), Seq(7, 1), Seq(6, 1)), Set(Seq(7, 1))), Seq(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 1, -1, -1, -1, -1, -1) )
     nodePar.setB()
     // Node@1521934339(B)
-    val nSwapL =  Node( List(Set(Vector(4, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1) )
+    val nSwapL =  Node( Seq(Set(Seq(4, 1))), Seq(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1) )
     nSwapL.setB()
     // Node@2009145978(A)
-    val nSwapR = Node( List(Set(Vector(4, 1), Vector(3, 1), Vector(8, 1))), List(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
+    val nSwapR = Node( Seq(Set(Seq(4, 1), Seq(3, 1), Seq(8, 1))), Seq(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
     nSwapR.setA()
 
     nodePar.setL( Some(node) )
@@ -798,8 +813,8 @@ class SumScheduleSuite extends TestSuite {
     nSwap.setL( Some(nSwapL) )
     nSwap.setR( Some(nSwapR) )
 
-    val nodeList = List( node, nSwap, nOther )
-    for ( n <- nodeList )
+    val nodeSeq = Seq( node, nSwap, nOther )
+    for ( n <- nodeSeq )
       assert( Node.isMinimal( n ), "node " + n + " should be minimal" )
 
     val res = Transforms.trySwap( node, nSwap, true )
