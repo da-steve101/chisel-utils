@@ -636,14 +636,14 @@ class SumScheduleSuite extends TestSuite {
     val imgSize = 5
     val filterSize = 3
     val cpCoords = getConvSums( imgSize, filterSize ).zipWithIndex.map( cSet => {
-      cSet._1.map( v => Vector( cSet._2 - v(0)) ++ v.drop(1) )
-    })
-    val latAdd = AnnealingSolver.needLatency( List( cpCoords ) )
+      cSet._1.map( v => { Vector( cSet._2 - v(0)) ++ v.drop(1) }.to[Seq] )
+    }).toVector.to[Seq]
+    val latAdd = AnnealingSolver.needLatency( Vector( cpCoords ).to[Seq] )
     println( "latAdd = " + latAdd )
     val cp = cpCoords.zipWithIndex.map( cSet => {
-      cSet._1.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) })
+      cSet._1.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) }.to[Seq])
     })
-    var nodes = AnnealingSolver.init( List( cp ) )._1
+    var nodes = AnnealingSolver.init( Vector( cp ).to[Seq] )._1
     nodes = AnnealingSolver.runPar( nodes, 100000000, 1000000 )
     assert( testLinks( nodes ), "Nodes must be connected properly" )
     for ( n <- nodes )
@@ -828,4 +828,5 @@ class SumScheduleSuite extends TestSuite {
     res.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
 
   }
+
 }

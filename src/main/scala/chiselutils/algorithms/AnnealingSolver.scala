@@ -246,7 +246,7 @@ object AnnealingSolver {
     ( mergedRes._1, parentNodes, mergedRes._2 )
   }
 
-  private def lockNodes( nodesIn : Seq[Node], alreadyLocked : Set[Node] ) : (Boolean, Set[Node]) = {
+  private def lockNodes( nodesIn : Set[Node], alreadyLocked : Set[Node] ) : (Boolean, Set[Node]) = {
     val nodesLocked = collection.mutable.Set[Node]()
     // lock parents of node
     for( p <- nodesIn) {
@@ -316,7 +316,7 @@ object AnnealingSolver {
     }
 
     // lock parents of node, nodeL and nodeR
-    val lockPar = lockNodes( node.getParents() ++ nodeL.getParents() ++ nodeR.getParents(), nodesLocked.toSet )
+    val lockPar = lockNodes( node.getParentSet() ++ nodeL.getParentSet() ++ nodeR.getParentSet(), nodesLocked.toSet )
     if ( !lockPar._1 ) {
       nodesLocked.map( n => n.unlockNode() )
       return (false, Set[Node]())
@@ -469,16 +469,16 @@ object AnnealingSolver {
     nodes ++= nodesIn
 
     val iterDub = iter.toDouble/innerLoopSize
-    val iterPer = 100/iterDub
     val A = math.log( 0.01 )/iterDub
 
     var oldTime = System.currentTimeMillis()
+    val myTRand = java.util.concurrent.ThreadLocalRandom.current()
 
     for( i <- 0 until iter/innerLoopSize ) {
       // decay the likelihood of performing an operation that makes the solution worse
       val threshold = (1 - math.exp( A*i ))/0.99
       val currTime = System.currentTimeMillis()
-      println( "progress = " + (i*innerLoopSize) + "/" + iter + " = " + (i/iterPer) + "%, threshold = " + threshold +
+      println( "progress = " + (i*innerLoopSize) + "/" + iter + ", threshold = " + threshold +
         ", cost = " + nodes.size + ", time = " + (( currTime - oldTime ).toDouble/60000) + " mins")
       oldTime = currTime
       val mergeCount = new java.util.concurrent.atomic.AtomicInteger()
@@ -503,7 +503,7 @@ object AnnealingSolver {
 
         // pick a node randomally, lock it and the ones around it
         val tmpSync = nodes.synchronized {
-          val nRand = Random.nextInt(nodes.size)
+          val nRand = myTRand.nextInt(0, nodes.size)
           val it = nodes.iterator.drop(nRand)
           val node = it.next
           val nodeLock = node.lockNode()
@@ -517,23 +517,11 @@ object AnnealingSolver {
         if ( !node.isC() && lockRes._1 ) {
 
           // choose operation to perform
-          val applyIfIncrease = Random.nextDouble >= threshold
+          val applyIfIncrease = myTRand.nextDouble(1) >= threshold
 
-          val chooseMerge = Random.nextInt( 2 ) == 0
-          val chooseL = Random.nextInt( 2 ) == 0
-          val nSwap = {
-            if ( chooseL )
-              node.getL().get
-            else
-              node.getR().get
-          }
-
-          val nOther = {
-            if ( chooseL )
-              node.getR().get
-            else
-              node.getL().get
-          }
+          val chooseMerge = myTRand.nextInt( 0, 2 ) == 0
+          val nSwap = node.getL().get
+          val nOther = node.getR().get
 
           assert( lockRes._2.contains( nSwap ) && lockRes._2.contains( nOther ), "nSwap and nOther should be locked" )
 
@@ -546,7 +534,7 @@ object AnnealingSolver {
             ))
             if ( selNode.isDefined ) {
               // lock selected node parents too ... filter out already locked via other
-              val selPar = selNode.get.getParents().filterNot( n => lockRes._2.contains( n ) )
+              val selPar = selNode.get.getParentSet().filterNot( n => lockRes._2.contains( n ) )
               val parLocks = lockNodes( selPar, lockRes._2 )
 
               if ( parLocks._1 ) {
@@ -671,4 +659,5 @@ object AnnealingSolver {
     bw.close()
     file.renameTo( new java.io.File( fileOut ) )
   }
+
 }
