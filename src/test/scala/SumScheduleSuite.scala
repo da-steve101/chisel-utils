@@ -652,11 +652,11 @@ class SumScheduleSuite extends TestSuite {
     println( "cost = " + nodes.size )
   }
 
-  def genTrinary( filterSize : (Int, Int, Int, Int), imgSize : (Int, Int ) ) : Set[Node] = {
-    val convFilter = List.fill(filterSize._4) {
-      ( 0 until filterSize._1).toList.map( f1 => {
-        ( 0 until filterSize._2).toList.map( f2 => {
-          ( 0 until filterSize._3).toList.map( f3 => {
+  def genTrinary( filterSize : (Int, Int, Int, Int), imgSize : (Int, Int ), throughput : Int = 1 ) : Seq[Seq[Set[Seq[Int]]]] = {
+    val convFilter = Vector.fill(filterSize._4) {
+      ( 0 until filterSize._1).toVector.map( f1 => {
+        ( 0 until filterSize._2).toVector.map( f2 => {
+          ( 0 until filterSize._3).toVector.map( f3 => {
             val num = Random.nextInt(100)
             // cant deal with all 0 yet so just force not that case by putting 1 in mid
             val inMid = ( f1 == filterSize._1/2 && f2 == filterSize._2/2 && f3 == filterSize._3/2 )
@@ -688,12 +688,14 @@ class SumScheduleSuite extends TestSuite {
                 ( xpx >= 0 && xpx < imgSize._1 && ypy >= 0 && ypy < imgSize._2 && !isZero )
               }}.map{ case ( xpx, ypy, px, py, d ) => {
                 val addIdx = if ( convFilter( convIdx )(py)(px)(d) == 1 ) 1 else 0
-                Vector( ypy*imgSize._2 + xpx, (2*d) + addIdx )
+                val cyc = ( ypy*imgSize._2 + xpx )/throughput
+                val pos = (2*d) + addIdx + 2*filterSize._3*( ( ypy*imgSize._2 + xpx ) % throughput )
+                Vector( cyc, pos )
               }}.toSet
             }).reduce( _ ++ _ ) // sum over filter cols
           }).reduce( _ ++ _ ) // sum over filter rows
         })
-      }).reduce( _ ++ _ ).toList // collect image into a list
+      }).reduce( _ ++ _ ).toVector // collect image into a list
     })
 
     for ( convFilt <- cp ) {
@@ -703,23 +705,23 @@ class SumScheduleSuite extends TestSuite {
     }
     val cpCoords = cp.map( convFilt => {
       convFilt.zipWithIndex.map( cSet => {
-        cSet._1.map( v => {Vector( cSet._2 - v(0)) ++ v.drop(1)}.to[Seq] )
+        cSet._1.map( v => {Vector( cSet._2/throughput - v(0)) ++ v.drop(1)}.to[Seq] )
       }).toVector.to[Seq]
     }).toVector.to[Seq]
     val latAdd = AnnealingSolver.needLatency( cpCoords )
     println( "latAdd = " + latAdd )
     val cpFinal = cpCoords.map( convFilt => {
-      convFilt.zipWithIndex.map( cSet => {
-        cSet._1.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) }.to[Seq])
+      convFilt.map( cSet => {
+        cSet.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) }.to[Seq])
       })
     })
-    AnnealingSolver.init( cpFinal )._1
+    cpFinal
   }
 
   @Test def trinaryLayer {
     val filterSize = ( 3, 3, 3, 128 )
     val imgSize = ( 32, 32 )
-    val initNodes = genTrinary( filterSize, imgSize )
+    val initNodes = AnnealingSolver.init( genTrinary( filterSize, imgSize, 2 ) )._1
     println( "created " + initNodes.size + " nodes")
     /*
     println( "start sleep" )
