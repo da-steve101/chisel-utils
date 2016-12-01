@@ -675,7 +675,7 @@ class SumScheduleSuite extends TestSuite {
     }
 
     val cp = ( 0 until filterSize._4 ).map( convIdx => { // for each filter
-      ( 0 until imgSize._2 ).map( y => { // for each column in the img
+      val imgOut = ( 0 until imgSize._2 ).map( y => { // for each column in the img
         ( 0 until imgSize._1 ).map( x => { // for each row in that column
           ( 0 until filterSize._1 ).map( px => {
             ( 0 until filterSize._2 ).map( py => {
@@ -695,8 +695,9 @@ class SumScheduleSuite extends TestSuite {
             }).reduce( _ ++ _ ) // sum over filter cols
           }).reduce( _ ++ _ ) // sum over filter rows
         })
-      }).reduce( _ ++ _ ).toVector // collect image into a list
-    })
+      }).reduce( _ ++ _ ) // collect image into a list
+      imgOut.zipWithIndex.groupBy( _._2 % throughput ).toVector.sortBy( _._1 ).map( _._2 ).map( v => v.map( s => s._1 ) )
+    }).reduce( _ ++ _ ) // collect all outputs
 
     for ( convFilt <- cp ) {
       for ( cSet <- convFilt ){
@@ -705,7 +706,7 @@ class SumScheduleSuite extends TestSuite {
     }
     val cpCoords = cp.map( convFilt => {
       convFilt.zipWithIndex.map( cSet => {
-        cSet._1.map( v => {Vector( cSet._2/throughput - v(0)) ++ v.drop(1)}.to[Seq] )
+        cSet._1.map( v => {Vector( cSet._2 - v(0)) ++ v.drop(1)}.to[Seq] )
       }).toVector.to[Seq]
     }).toVector.to[Seq]
     val latAdd = AnnealingSolver.needLatency( cpCoords )
@@ -830,5 +831,4 @@ class SumScheduleSuite extends TestSuite {
     res.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
 
   }
-
 }
