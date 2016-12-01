@@ -4,6 +4,7 @@
   */
 package chiselutils.algorithms
 
+import Chisel._
 import collection.mutable.ArrayBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -169,6 +170,9 @@ class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]], val 
   private val parents = collection.mutable.Set[Node]()
   private var nodeType = -1
   private val available = new AtomicBoolean( false );
+  private var nodeChisel : Option[Fixed] = None
+  private var muxBool = Some( Bool() )
+  private var validBool = Bool()
 
   def getModIdx( i : Int ) : Int = { ck( ( i + nodeSize - 1 ) % nodeSize ) }
   def getModSet( i : Int ) : Set[Seq[Int]] = {
@@ -284,6 +288,44 @@ class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]], val 
     if ( uk.size != 1 || uk.head.size != 1)
       return false
     uk.head.find( p => getP0( p ) == 0 ).isDefined
+  }
+
+  private def getMuxSwitch() : Vector[Boolean] = {
+    assert( isB() && lNode != rNode, "Must be mux to call muxSwitch" )
+    val rUk = rNode.get.getUkNext()
+    val rCk = rNode.get.getCkNext()
+    val lUk = lNode.get.getUkNext()
+    val lCk = lNode.get.getCkNext()
+    ck.zip( lCk.zip( rCk ) ).map( cks => {
+      // unnecessary to have both but better error checking
+      val isL = ( cks._1 == -1 && cks._2._1 == -1 ) || ( cks._1 != -1 && cks._2._1 != -1 && lUk( cks._2._1 ) == uk( cks._1 ) )
+      val isR = ( cks._1 == -1 && cks._2._2 == -1 ) || ( cks._1 != -1 && cks._2._2 != -1 && rUk( cks._2._2 ) == uk( cks._1 ) )
+      assert( isL || isR, "Cannot generate mux as no valid switch state" )
+      isR
+    }).toVector
+  }
+
+  def setChisel( n : Fixed ) = { nodeChisel = Some(n) }
+  def getChisel() = { nodeChisel }
+  def genChisel() : Fixed = {
+    if ( nodeChisel.isDefined )
+      return nodeChisel.get
+    assert( isA() || isB(), "Must set the C nodes before the others can be generated" )
+    val updateVal = {
+      if ( isA() )
+        lNode.get.genChisel() + rNode.get.genChisel()
+      else if ( lNode == rNode )
+        lNode.get.genChisel()
+      else {
+        // otherwise mux ...
+        muxBool = Some( Bool() )
+        Mux( muxBool.get, rNode.get.genChisel(), lNode.get.genChisel() )
+      }
+    }
+    val newReg = Reg( updateVal )
+    newReg := Mux( validBool, updateVal, newReg )
+    nodeChisel = Some( newReg )
+    nodeChisel.get
   }
 
   override def toString() : String = {

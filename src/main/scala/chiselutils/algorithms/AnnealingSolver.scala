@@ -2,6 +2,7 @@
   */
 package chiselutils.algorithms
 
+import Chisel._
 import collection.mutable.ArrayBuffer
 import util.Random
 
@@ -240,6 +241,7 @@ object AnnealingSolver {
       val ap = n._2.map( t => addPartition( t ) ).reduce( (x,y) => ( x._1 ++ y._1, x._2 ++ y._2 ) )
       ( ap._1 ++ n._1, ap._2 )
     }).reduce( (x,y) => ( x._1 ++ y._1, x._2 ++ y._2 ) )
+    println( "merge nodes for smaller initial graph" )
     val mergedRes = mergeAll( addRes._1 )
     for ( n <- mergedRes._1 )
       n.unlockNode()
@@ -464,9 +466,7 @@ object AnnealingSolver {
   /** Run in parallel
     */
   def runPar( nodesIn : Set[Node], iter : Int, innerLoopSize : Int = 100000 ) : Set[Node] = {
-    val nodes = new collection.mutable.HashSet[Node]()
-
-    nodes ++= nodesIn
+    val nodes = new NodeSet( nodesIn )
 
     val iterDub = iter.toDouble/innerLoopSize
     val A = math.log( 0.01 )/iterDub
@@ -484,31 +484,10 @@ object AnnealingSolver {
       val mergeCount = new java.util.concurrent.atomic.AtomicInteger()
       val splitCount = new java.util.concurrent.atomic.AtomicInteger()
       val swapCount = new java.util.concurrent.atomic.AtomicInteger()
-      /*
-      nodes.par.foreach( n => {
-        assert( !n.isLocked(), "should not be locked here" )
-        assert( Node.satisfiesConstraints( n ), "Node must satisfy constraints" )
-        if ( n.getL().isDefined )
-          assert( nodes.contains( n.getL().get ), "L must be in set" )
-        if ( n.getR().isDefined )
-          assert( nodes.contains( n.getL().get ), "R must be in set" )
-        if ( n.getParents().size > 0 )
-          assert( Node.isMinimal( n ), "Node " + n + " should be minimal" )
-        for ( p <- n.getParents() )
-          assert( nodes.contains( p ), "Parents must be in set" )
-      })
-       */
       println( "Start inner loop" )
       (  0 until innerLoopSize ).par.foreach( j => {
 
-        // pick a node randomally, lock it and the ones around it
-        val tmpSync = nodes.synchronized {
-          val nRand = myTRand.nextInt(0, nodes.size)
-          val it = nodes.iterator.drop(nRand)
-          val node = it.next
-          val nodeLock = node.lockNode()
-          ( node, nodeLock )
-        }
+        val tmpSync = nodes.randomNode()
 
         val node = tmpSync._1
         val nodeLock = tmpSync._2
@@ -545,11 +524,11 @@ object AnnealingSolver {
                   assert( lockRes._2.contains( node ) && lockRes._2.contains( selNode.get ), "Should hold locks" )
                   assert( !nodes.contains( res.get ), "Adding node already in?" )
                   assert( node.getParents().size == 0 && selNode.get.getParents().size == 0, "Should not be connected" )
-                  nodes.synchronized {
-                    nodes -= node
-                    nodes -= selNode.get
-                    nodes += res.get
-                  }
+
+                  nodes -= node
+                  nodes -= selNode.get
+                  nodes += res.get
+
                   res.get.unlockNode()
                 }
                 parLocks._2.map( n => n.unlockNode() )
@@ -572,10 +551,10 @@ object AnnealingSolver {
                   assert( lockRes._2.contains( nodeToSplit ), "Should hold locks" )
                   assert( !nodeList.find( nodes.contains( _ ) ).isDefined, "Adding node already in?" )
                   assert( nodeToSplit.getParents().size == 0, "Should not be connected" )
-                  nodes.synchronized {
-                    nodes -= nodeToSplit
-                    nodes ++= nodeList
-                  }
+
+                  nodes -= nodeToSplit
+                  nodes ++= nodeList
+
                   nodeList.map( n => n.unlockNode() )
                   splitCount.incrementAndGet()
                 }
@@ -588,11 +567,12 @@ object AnnealingSolver {
                 val repNode = res.drop(1).find( nodes.contains( _ ) )
                 assert( !repNode.isDefined, "Adding " + repNode + " already in?" )
                 assert( nSwap.getParents().size == 0 && nOther.getParents().size == 0, "Should not be connected" )
-                nodes.synchronized {
-                  nodes -= nSwap
+
+                nodes -= nSwap
+                if ( nOther != nSwap )
                   nodes -= nOther
-                  nodes ++= res.drop(1)
-                }
+                nodes ++= res.drop(1)
+
                 res.filter( n => n.getParents.size > 0 ).foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
                 res.drop(1).map( n => n.unlockNode() ) // only unlock new nodes
                 swapCount.incrementAndGet()
@@ -606,7 +586,20 @@ object AnnealingSolver {
       println( "splitCount = " + splitCount.get() )
       println( "swapCount = " + swapCount.get() )
     }
-    Set[Node]() ++ nodes
+    // final verification
+    nodes.foreach( n => {
+      assert( !n.isLocked(), "should not be locked here" )
+      assert( Node.satisfiesConstraints( n ), "Node must satisfy constraints" )
+      if ( n.getL().isDefined )
+        assert( nodes.contains( n.getL().get ), "L must be in set" )
+      if ( n.getR().isDefined )
+        assert( nodes.contains( n.getL().get ), "R must be in set" )
+      if ( n.getParents().size > 0 )
+        assert( Node.isMinimal( n ), "Node " + n + " should be minimal" )
+      for ( p <- n.getParents() )
+        assert( nodes.contains( p ), "Parents must be in set" )
+    })
+    nodes.toSet
   }
 
   /** Convert the node set to a .dot graph file
@@ -658,6 +651,15 @@ object AnnealingSolver {
     bw.write("}\n")
     bw.close()
     file.renameTo( new java.io.File( fileOut ) )
+  }
+
+  def toChisel( nodes : Set[Node], inputs : Set[(Fixed, Node)], validIn : Bool ) : Set[(Fixed, Node)] = {
+    for ( n <- inputs )
+      n._2.setChisel( n._1 )
+    val outNodes = nodes.filter( _.getParentSet().size == 0 ).map( n => { ( n.genChisel(), n ) })
+
+
+    outNodes
   }
 
 }
