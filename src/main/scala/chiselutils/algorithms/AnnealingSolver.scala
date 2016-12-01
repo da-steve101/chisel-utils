@@ -476,7 +476,7 @@ object AnnealingSolver {
 
     for( i <- 0 until iter/innerLoopSize ) {
       // decay the likelihood of performing an operation that makes the solution worse
-      val threshold = (1 - math.exp( A*i ))/0.99
+      val threshold = (1 - math.exp( A*(i + 1)))/0.99
       val currTime = System.currentTimeMillis()
       println( "progress = " + (i*innerLoopSize) + "/" + iter + ", threshold = " + threshold +
         ", cost = " + nodes.size + ", time = " + (( currTime - oldTime ).toDouble/60000) + " mins")
