@@ -505,7 +505,7 @@ object AnnealingSolver {
           assert( lockRes._2.contains( nSwap ) && lockRes._2.contains( nOther ), "nSwap and nOther should be locked" )
 
           // perform a merge
-          if ( chooseMerge ) {
+          if ( chooseMerge && !node.parentsIsEmpty ) {
             val parents = nOther.intersectPar( nSwap.getParentSet() )
             val selNode = parents.find( p => p != node && (
               (p.getL() == node.getL() && p.getR() == node.getR()) ||
@@ -522,7 +522,7 @@ object AnnealingSolver {
                 if ( res.isDefined ) {
                   assert( node.isLocked() && selNode.get.isLocked(), "Should be removing locked nodes" )
                   assert( lockRes._2.contains( node ) && lockRes._2.contains( selNode.get ), "Should hold locks" )
-                  assert( node.getParents().size == 0 && selNode.get.getParents().size == 0, "Should not be connected" )
+                  assert( node.parentsIsEmpty && selNode.get.parentsIsEmpty, "Should not be connected" )
 
                   nodes -= node
                   nodes -= selNode.get
@@ -536,10 +536,10 @@ object AnnealingSolver {
             }
           } else  {
             // check if have to do split instead of swap
-            if ( nSwap.getParents().size > 1 || nOther.getParents.size > 1 ) {
+            if ( nSwap.getParentSet.size > 1 || nOther.getParentSet.size > 1 ) {
               if ( applyIfIncrease ) {
                 val nodeToSplit = {
-                  if ( nSwap.getParents().size > 1 )
+                  if ( nSwap.getParentSet.size > 1 )
                     nSwap
                   else
                     nOther
@@ -548,7 +548,7 @@ object AnnealingSolver {
                 if ( nodeList.size > 0 ) {
                   assert( nodeToSplit.isLocked(), "Should be removing locked nodes" )
                   assert( lockRes._2.contains( nodeToSplit ), "Should hold locks" )
-                  assert( nodeToSplit.getParents().size == 0, "Should not be connected" )
+                  assert( nodeToSplit.parentsIsEmpty, "Should not be connected" )
 
                   nodes -= nodeToSplit
                   nodes ++= nodeList
@@ -562,14 +562,14 @@ object AnnealingSolver {
               if ( res.size > 0 ) {
                 assert( nSwap.isLocked() && nOther.isLocked(), "Should be removing locked nodes" )
                 assert( lockRes._2.contains( nSwap ) && lockRes._2.contains( nOther ), "Should hold locks" )
-                assert( nSwap.getParents().size == 0 && nOther.getParents().size == 0, "Should not be connected" )
+                assert( nSwap.parentsIsEmpty && nOther.parentsIsEmpty, "Should not be connected" )
 
                 nodes -= nSwap
                 if ( nOther != nSwap )
                   nodes -= nOther
                 nodes ++= res.drop(1)
 
-                res.filter( n => n.getParents.size > 0 ).foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
+                res.filterNot( _.parentsIsEmpty ).foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
                 res.drop(1).map( n => n.unlockNode() ) // only unlock new nodes
                 swapCount.incrementAndGet()
               }
@@ -590,7 +590,7 @@ object AnnealingSolver {
         assert( nodes.contains( n.getL().get ), "L must be in set" )
       if ( n.getR().isDefined )
         assert( nodes.contains( n.getL().get ), "R must be in set" )
-      if ( n.getParents().size > 0 )
+      if ( !n.parentsIsEmpty )
         assert( Node.isMinimal( n ), "Node " + n + " should be minimal" )
       for ( p <- n.getParents() )
         assert( nodes.contains( p ), "Parents must be in set" )
