@@ -332,4 +332,12 @@ class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]], val 
     "Node@" + hashCode + "(" + letter() + ") { " + uk + " } { " + ck + " }"
   }
 
+  private var _hashIdx = -1
+  def hashIdx = _hashIdx
+  def hashIdx_= ( value : Int ) : Unit = {
+    if ( _hashIdx == -1 )
+      _hashIdx = value
+  }
+
+
 }
