@@ -522,7 +522,6 @@ object AnnealingSolver {
                 if ( res.isDefined ) {
                   assert( node.isLocked() && selNode.get.isLocked(), "Should be removing locked nodes" )
                   assert( lockRes._2.contains( node ) && lockRes._2.contains( selNode.get ), "Should hold locks" )
-                  assert( !nodes.contains( res.get ), "Adding node already in?" )
                   assert( node.getParents().size == 0 && selNode.get.getParents().size == 0, "Should not be connected" )
 
                   nodes -= node
@@ -549,7 +548,6 @@ object AnnealingSolver {
                 if ( nodeList.size > 0 ) {
                   assert( nodeToSplit.isLocked(), "Should be removing locked nodes" )
                   assert( lockRes._2.contains( nodeToSplit ), "Should hold locks" )
-                  assert( !nodeList.find( nodes.contains( _ ) ).isDefined, "Adding node already in?" )
                   assert( nodeToSplit.getParents().size == 0, "Should not be connected" )
 
                   nodes -= nodeToSplit
@@ -564,8 +562,6 @@ object AnnealingSolver {
               if ( res.size > 0 ) {
                 assert( nSwap.isLocked() && nOther.isLocked(), "Should be removing locked nodes" )
                 assert( lockRes._2.contains( nSwap ) && lockRes._2.contains( nOther ), "Should hold locks" )
-                val repNode = res.drop(1).find( nodes.contains( _ ) )
-                assert( !repNode.isDefined, "Adding " + repNode + " already in?" )
                 assert( nSwap.getParents().size == 0 && nOther.getParents().size == 0, "Should not be connected" )
 
                 nodes -= nSwap
