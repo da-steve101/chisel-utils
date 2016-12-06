@@ -108,7 +108,7 @@ object Node {
   /** Check that there are no extra numbers being put in there
     */
   def isMinimal( n : Node ) : Boolean = {
-    val parents = n.getParents()
+    val parents = n.getParentSet()
     val nUk = n.getUkNext()
     val nCk = n.getCkNext()
     // find out which mux have n as input and which cycle
@@ -243,6 +243,7 @@ class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]], val 
   }
   def getParents() : Seq[Node] = parents.toVector
   def getParentSet() : Set[Node] = parents.toSet
+  def parentsIsEmpty() : Boolean = parents.isEmpty
   def intersectPar( otherP : Set[Node] ) = { otherP.intersect( parents.toSet ) }
   private def addParent( n : Node ) = {
     assert( isLocked(), "Node should be locked to add parent" )

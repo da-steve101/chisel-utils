@@ -661,9 +661,9 @@ class SumScheduleSuite extends TestSuite {
             // cant deal with all 0 yet so just force not that case by putting 1 in mid
             val inMid = ( f1 == filterSize._1/2 && f2 == filterSize._2/2 && f3 == filterSize._3/2 )
             val trinary = {
-              if ( num < 16 || inMid  )
+              if ( num < 8  )
                 1
-              else if ( num < 16 + 22 )
+              else if ( num < 16 )
                 -1
               else
                 0
@@ -697,11 +697,11 @@ class SumScheduleSuite extends TestSuite {
         })
       }).reduce( _ ++ _ ) // collect image into a list
       imgOut.zipWithIndex.groupBy( _._2 % throughput ).toVector.sortBy( _._1 ).map( _._2 ).map( v => v.map( s => s._1 ) )
-    }).reduce( _ ++ _ ) // collect all outputs
+    }).reduce( _ ++ _ ).filter( cList => cList.find( !_.isEmpty ).isDefined ) // collect all outputs
 
     for ( convFilt <- cp ) {
       for ( cSet <- convFilt ){
-        assert( cSet.size > 0, "can't deal with empty sets" )
+        // assert( cSet.size > 0, "can't deal with empty sets" )
       }
     }
     val cpCoords = cp.map( convFilt => {
@@ -724,12 +724,7 @@ class SumScheduleSuite extends TestSuite {
     val imgSize = ( 32, 32 )
     val initNodes = AnnealingSolver.init( genTrinary( filterSize, imgSize, 2 ) )._1
     println( "created " + initNodes.size + " nodes")
-    /*
-    println( "start sleep" )
-    Thread.sleep(1000000)
-    println( "stop sleep" )
-     */
-    val nodes = AnnealingSolver.runPar( initNodes, 10000000 )
+    val nodes = AnnealingSolver.runPar( initNodes, 100000000, 1000000 )
     assert( testLinks( nodes ), "Nodes must be connected properly" )
     for ( n <- nodes )
       assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )

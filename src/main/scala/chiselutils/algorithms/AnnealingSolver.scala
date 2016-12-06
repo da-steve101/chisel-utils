@@ -218,10 +218,13 @@ object AnnealingSolver {
   }
 
   def needLatency( cp : Seq[Seq[Set[Seq[Int]]]] ) : Int = {
-    val cpRemaining = cp.map( cList => {
-      cycRemaining( cList.map( cSet => {
+    val cpRemaining = cp.filter( cList => {
+      cList.find( !_.isEmpty ).isDefined
+    }).map( cList => {
+      val listRes = cList.filterNot( _.isEmpty ).map( cSet => {
         cycRemaining( cSet.toVector.map( v => v(0) ) )
-      }))
+      })
+      cycRemaining( listRes )
     })
     -cpRemaining.min
   }
@@ -231,8 +234,12 @@ object AnnealingSolver {
     * Returns ( All the nodes, the parent nodes, the termination nodes )
     */
   def init( cp : Seq[Seq[Set[Seq[Int]]]] ) : ( Set[Node], Seq[Node], Seq[Node] ) = {
-    val addTimes = cp.map( node => {
-      node.map( s => cycRemaining( s.toVector.map( v => v(0) )) )
+    val addTimes = cp.filter( cList => {
+      cList.find( !_.isEmpty ).isDefined
+    }).map( node => {
+      node.filterNot( _.isEmpty ).map( s =>
+        cycRemaining( s.toVector.map( v => v(0) ))
+      )
     })
     val muxTimes = addTimes.map( cycRemaining( _ ) )
     val parentNodes = cp.map( Node( _ ) )
