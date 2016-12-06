@@ -520,65 +520,65 @@ object Transforms {
 
   /** Look at two nodes and try to swap them
     */
-  def trySwap( nPar : Node, nSwap : Node, applyIfIncrease : Boolean = true ) : Seq[Node] = {
+  def trySwap( nPar : Node, nSwap : Node, applyIfIncrease : Boolean = true ) : (Seq[Node], Int) = {
 
     assert( nSwap.hasParent( nPar ), "For swap must have swap and parent node" )
 
     if ( nSwap.isC() )
-      return List[Node]()
+      return (List[Node](), 0)
 
     // work out how nodes are connected ( should be directly )
     if ( nPar.isB() && nPar.getL() == nPar.getR() ) {
       if ( nSwap.isA() )
-        return { if ( applyIfIncrease ) swapCase1( nPar, nSwap ) else List[Node]() }
+        return { if ( applyIfIncrease ) ( swapCase1( nPar, nSwap ), 1 ) else ( List[Node](), 0 ) }
       if ( nSwap.isB() && nSwap.getL() != nSwap.getR() )
-        return { if ( applyIfIncrease ) swapCase2( nPar, nSwap ) else List[Node]() }
-      return List[Node]() // case 3 which no point as changes nothing
+        return { if ( applyIfIncrease ) ( swapCase2( nPar, nSwap ), 2 ) else ( List[Node](), 0) }
+      return (List[Node](), 0) // case 3 which no point as changes nothing
     }
     val nOther = { if ( nPar.getL().get == nSwap ) nPar.getR().get else nPar.getL().get }
 
     if ( nPar.isA() ) {
       if ( nSwap.isB() && nSwap.getL() == nSwap.getR() ) {
         if ( nOther.isA() )
-          return swapCase4( nPar, nSwap, nOther )
+          return ( swapCase4( nPar, nSwap, nOther ), 4 )
         if ( nOther.isB() && nOther.getL() == nOther.getR() )
-          return swapCase6( nPar, nSwap, nOther )
+          return ( swapCase6( nPar, nSwap, nOther ), 6 )
         if ( nOther.isB() )
-          return swapCase7( nPar, nSwap, nOther )
+          return ( swapCase7( nPar, nSwap, nOther ), 7 )
       }
 
       if ( nOther.isB() && nOther.getL() == nOther.getR() ) {
         if ( nSwap.isA() )
-          return swapCase4( nPar, nOther, nSwap )
+          return ( swapCase4( nPar, nOther, nSwap ), 4 )
         if ( nSwap.isB() )
-          return swapCase7( nPar, nOther, nSwap )
+          return ( swapCase7( nPar, nOther, nSwap ), 7 )
       }
 
       if ( nSwap.isA() && nOther.isA() )
-        return swapCase5( nPar, nSwap, nOther )
+        return ( swapCase5( nPar, nSwap, nOther ), 5 )
     }
 
     if ( nPar.isB() ) {
       if ( nSwap.isB() && nSwap.getL() == nSwap.getR() ) {
         if ( nOther.isB() && nOther.getL() == nOther.getR() )
-          return swapCase10( nPar, nSwap, nOther )
+          return ( swapCase10( nPar, nSwap, nOther ), 10 )
         if ( nOther.isB() )
-          return swapCase13( nPar, nSwap, nOther )
-        return List[Node]()
+          return ( swapCase13( nPar, nSwap, nOther ), 13 )
+        return ( List[Node](), 0 )
       }
 
       if ( nOther.isB() && nOther.getL() == nOther.getR() ) {
         if ( nSwap.isB() )
-          return swapCase13( nPar, nOther, nSwap )
+          return ( swapCase13( nPar, nOther, nSwap ), 13 )
       }
 
       if ( nSwap.isB() && nOther.isB() )
-        return swapCase12( nPar, nSwap, nOther )
+        return ( swapCase12( nPar, nSwap, nOther ), 12 )
 
       if ( nSwap.isA() && nOther.isA() )
-        return swapCase11( nPar, nSwap, nOther )
+        return ( swapCase11( nPar, nSwap, nOther ), 11 )
     }
-    List[Node]()
+    ( List[Node](), 0 )
   }
 
   /** Split a node and randomally assign its parents to each

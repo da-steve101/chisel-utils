@@ -195,7 +195,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintA( nodeSwap ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
 
     assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
@@ -227,7 +227,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeSwap ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
@@ -271,7 +271,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintA( nodeOther ) )
     assert( Node.satisfiesConstraintA( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
 
     assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
@@ -317,7 +317,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintA( nodeOther ) )
     assert( Node.satisfiesConstraintA( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
 
     assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
     assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isA() )
@@ -354,7 +354,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeOther ) )
     assert( Node.satisfiesConstraintA( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isA() )
@@ -395,7 +395,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeOther ) )
     assert( Node.satisfiesConstraintA( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isA() )
@@ -432,7 +432,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeOther ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
@@ -472,7 +472,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintA( nodeOther ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
 
     assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
@@ -518,7 +518,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeOther ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
@@ -568,7 +568,7 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeOther ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )
+    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
@@ -782,7 +782,7 @@ class SumScheduleSuite extends TestSuite {
     nOther.setL( None )
     nOther.setR( None )
 
-    res.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
+    res._1.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
   }
 
   @Test def minimalTest2 {
@@ -823,7 +823,7 @@ class SumScheduleSuite extends TestSuite {
     nOther.setL( None )
     nOther.setR( None )
 
-    res.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
+    res._1.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
 
   }
 }

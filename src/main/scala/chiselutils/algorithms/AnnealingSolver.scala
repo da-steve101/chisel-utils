@@ -363,10 +363,10 @@ object AnnealingSolver {
     nodeList
   }
 
-  def performSwap( node : Node, nSwap : Node, nOther : Node, applyIfIncrease : Boolean ) : Seq[Node] = {
+  def performSwap( node : Node, nSwap : Node, nOther : Node, applyIfIncrease : Boolean ) : (Seq[Node], Int) = {
 
     val res = Transforms.trySwap( node, nSwap, applyIfIncrease )
-    if ( res.size == 0 )
+    if ( res._1.size == 0 )
       return res
 
     // clean up parents of merged nodes
@@ -445,10 +445,10 @@ object AnnealingSolver {
 
     // else swap
     val res = performSwap( node, nSwap, nOther, applyIfIncrease )
-    if ( res.size == 0 )
+    if ( res._1.size == 0 )
       return nodes
 
-    ( ( nodes - nSwap ) - nOther ) ++ res
+    ( ( nodes - nSwap ) - nOther ) ++ res._1
   }
 
   def run( nodesIn : Set[Node], iter : Int ) : Set[Node] = {
@@ -566,7 +566,7 @@ object AnnealingSolver {
               }
             } else { // else swap
               val res = performSwap( node, nSwap, nOther, applyIfIncrease )
-              if ( res.size > 0 ) {
+              if ( res._1.size > 0 ) {
                 assert( nSwap.isLocked() && nOther.isLocked(), "Should be removing locked nodes" )
                 assert( lockRes._2.contains( nSwap ) && lockRes._2.contains( nOther ), "Should hold locks" )
                 assert( nSwap.parentsIsEmpty && nOther.parentsIsEmpty, "Should not be connected" )
@@ -574,10 +574,11 @@ object AnnealingSolver {
                 nodes -= nSwap
                 if ( nOther != nSwap )
                   nodes -= nOther
-                nodes ++= res.drop(1)
+                nodes ++= res._1.drop(1)
 
-                res.filterNot( _.parentsIsEmpty ).foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
-                res.drop(1).map( n => n.unlockNode() ) // only unlock new nodes
+                for( n <- res._1.filterNot( _.parentsIsEmpty ) )
+                  assert( Node.isMinimal( n ), "node " + n + " should be minimal after swap " + res._2 )
+                res._1.drop(1).map( n => n.unlockNode() ) // only unlock new nodes
                 swapCount.incrementAndGet()
               }
             }
