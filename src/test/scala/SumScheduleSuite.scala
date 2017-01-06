@@ -15,7 +15,9 @@ class SumScheduleSuite extends TestSuite {
   val nodeSize = 20
   val maxVal = 10
 
-  class MyMod( val myNodes : Set[Node], val inNodes : Seq[Node], val outNodes : Seq[Node] ) extends Module {
+  class MyMod( val myNodes : Set[Node], val outNodes : Seq[Node] ) extends Module {
+    val inNodes = myNodes.filter( _.isC() ).toVector.sortBy( n => n.uk(0).toList(0)(1) ) // have to put in order
+    Predef.assert( inNodes.size == ( inNodes.last.uk(0).map( x => x(1) ).max + 1 ), "Should be correct number of inNodes" )
     val io = new Bundle {
       val in = Valid( Vec( inNodes.size, Fixed( INPUT, 16, 8 ) ) ).asInput
       val out = Valid( Vec( outNodes.size, Fixed( OUTPUT, 16, 8 ) ) )
@@ -140,9 +142,9 @@ class SumScheduleSuite extends TestSuite {
     outSums
   }
 
-  def verifyHardware( nodes : Set[Node], inNodes : Seq[Node], outNodes : Seq[Node] ) {
+  def verifyHardware( nodes : Set[Node], outNodes : Seq[Node] ) {
     chiselMainTest( Array("--genHarness", "--compile", "--test", "--vcd", "--backend", "c"),
-      () => Module( new MyMod( nodes, inNodes, outNodes ) ) ) { c => new MyModTests( c ) }
+      () => Module( new MyMod( nodes, outNodes ) ) ) { c => new MyModTests( c ) }
   }
 
   /** Test the sum constraint
@@ -697,6 +699,8 @@ class SumScheduleSuite extends TestSuite {
       assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
     AnnealingSolver.toDot( nodes, "conv3n5.dot" )
     println( "cost = " + nodes.size )
+    val outNodes = nodes.filter( _.parentsIsEmpty() ).toVector
+    verifyHardware( nodes, outNodes )
   }
 
   def genTrinary( filterSize : (Int, Int, Int, Int), imgSize : (Int, Int ), throughput : Int = 1 ) : Seq[Seq[Set[Seq[Int]]]] = {
@@ -915,7 +919,7 @@ class SumScheduleSuite extends TestSuite {
       assert( Node.satisfiesConstraints(n), "Node " + n + " must satisfy constraints" )
 
     // test hardware
-    verifyHardware( nodes, Vector( nodeA, nodeB, nodeC, nodeD ), Vector( reg1, mux3 ) )
+    verifyHardware( nodes, Vector( reg1, mux3 ) )
   }
 
 }
