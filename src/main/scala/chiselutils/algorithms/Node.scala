@@ -159,6 +159,11 @@ object Node {
     uk.map( uki => uki.map( v => { List( v(0) + 1 ) ++ v.drop(1) }.to[Seq] ))
   }
 
+  def latency( n : Node ) : Int = {
+    val expandedCk = n.ck.map( cki => if ( cki == -1 ) 0 else n.uk( cki ).map( v => v(0) ).max )
+    expandedCk.zipWithIndex.map( i => i._1 - i._2 ).max
+  }
+
 }
 
 class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
@@ -225,7 +230,8 @@ class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]], val 
   def getUkNext() : Seq[Set[Seq[Int]]] = { uk.map( uki => uki.map( v => { List( v(0) + 1 ) ++ v.drop(1) }.to[Seq] )) }
   def getL() = { lNode }
   def getR() = { rNode }
-  def setL( n : Option[Node] ) = {
+  def setL( n : Node ) : Unit = { setL( Some( n ) ) }
+  def setL( n : Option[Node] ) : Unit = {
     assert( isLocked(), "Node should be locked to setL" )
     if ( lNode.isDefined && lNode != rNode )
       lNode.get.removeParent( this )
@@ -233,7 +239,8 @@ class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]], val 
     if ( n.isDefined )
       n.get.addParent( this )
   }
-  def setR( n : Option[Node] ) = {
+  def setR( n : Node ) : Unit = { setR( Some( n ) ) }
+  def setR( n : Option[Node] ) : Unit = {
     assert( isLocked(), "Node should be locked to setR" )
     if ( rNode.isDefined && lNode != rNode )
       rNode.get.removeParent( this )
@@ -319,15 +326,23 @@ class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]], val 
         lNode.get.genChisel()
       else {
         // otherwise mux ...
-        muxBool = Some( Bool() )
+        val cntr = RegInit( UInt( 0, log2Up( ck.size ) ) )
+        cntr := cntr + UInt( 1 )
+        when ( cntr === UInt( ck.size - 1 ) ) {
+          cntr := UInt( 0 )
+        }
+        val muxSwitch = ROM( getMuxSwitch().map( Bool( _ ) ) )
+        muxBool = Some( muxSwitch( cntr ) )
         Mux( muxBool.get, rNode.get.genChisel(), lNode.get.genChisel() )
       }
     }
-    val newReg = Reg( updateVal )
-    newReg := Mux( validBool, updateVal, newReg )
+    val newReg = RegNext( updateVal )
+    // newReg := Mux( validBool, updateVal, newReg )
     nodeChisel = Some( newReg )
     nodeChisel.get
   }
+
+  def getMuxBool() : Option[Bool] = muxBool
 
   override def toString() : String = {
     "Node@" + hashCode + "(" + letter() + ") { " + uk + " } { " + ck + " }"

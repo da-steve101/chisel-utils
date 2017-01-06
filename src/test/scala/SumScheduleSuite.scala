@@ -6,6 +6,7 @@ import scala.collection.mutable.ArrayBuffer
 import chiselutils.algorithms.Node
 import chiselutils.algorithms.Transforms
 import chiselutils.algorithms.AnnealingSolver
+import Chisel._
 
 class SumScheduleSuite extends TestSuite {
 
@@ -13,6 +14,47 @@ class SumScheduleSuite extends TestSuite {
   val dim = 2
   val nodeSize = 20
   val maxVal = 10
+
+  class MyMod( val myNodes : Set[Node], val inNodes : Seq[Node], val outNodes : Seq[Node] ) extends Module {
+    val io = new Bundle {
+      val in = Valid( Vec( inNodes.size, Fixed( INPUT, 16, 8 ) ) ).asInput
+      val out = Valid( Vec( outNodes.size, Fixed( OUTPUT, 16, 8 ) ) )
+    }
+    val nodeInputs = io.in.bits.zip( inNodes ).toSet
+    io.out.valid := AnnealingSolver.toChisel( myNodes, nodeInputs, io.in.valid )
+    for ( n <- outNodes.zipWithIndex )
+      io.out.bits(n._2) := n._1.getChisel().get
+  }
+
+  class MyModTests( c : MyMod ) extends Tester( c ) {
+    val numIn = c.io.in.bits.size
+    val numOut = c.io.out.bits.size
+    val latency = c.myNodes.map( n => Node.latency( n ) ).max
+    val cycs = 10
+    val testInputs = ( 0 until cycs ).toSeq.map( c =>
+      ( 0 until numIn ).toSeq.map( ni => BigInt( myRand.nextInt( maxVal ) ) )
+    )
+    poke( c.io.in.valid, true )
+    for ( cyc <- 0 until cycs ) {
+      for ( i <- 0 until numIn )
+        poke( c.io.in.bits( i ), testInputs( cyc )( i ) )
+      val validOut = peek( c.io.out.valid ) == 1
+      peek( c.io.out )
+      if ( validOut ) {
+        for ( n <- c.outNodes.zipWithIndex ) {
+          val node = n._1
+          val currCyc = ( cyc - 1 ) % node.ck.size
+          val currOut = node.ck( currCyc )
+          if ( currOut != -1 ) {
+            val uki = node.uk( currOut )
+            val sum = uki.map( num => testInputs( cyc - num( 0 ) )( num( 1 ) ) ).sum
+            expect( c.io.out.bits( n._2 ), sum )
+          }
+        }
+      }
+      step( 1 )
+    }
+  }
 
   def genUk( noUk : Int, setSize : Int ) : Seq[Set[Seq[Int]]] = {
     Vector.fill( noUk ) { List.fill( setSize ) { List.fill( dim ) { myRand.nextInt( maxVal ) + 1 }.to[Seq]}.to[Set] }
@@ -96,6 +138,11 @@ class SumScheduleSuite extends TestSuite {
       })
     }).reduce( _ ++ _ ).toList
     outSums
+  }
+
+  def verifyHardware( nodes : Set[Node], inNodes : Seq[Node], outNodes : Seq[Node] ) {
+    chiselMainTest( Array("--genHarness", "--compile", "--test", "--vcd", "--backend", "c"),
+      () => Module( new MyMod( nodes, inNodes, outNodes ) ) ) { c => new MyModTests( c ) }
   }
 
   /** Test the sum constraint
@@ -826,4 +873,49 @@ class SumScheduleSuite extends TestSuite {
     res._1.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
 
   }
+
+  @Test def hardwareGen {
+    val nodeA = Node( Seq( Set(Seq( 0, 0 )) ), Seq( 0, -1, 0, -1 ) )
+    val nodeB = Node( Seq( Set(Seq( 0, 1 )) ), Seq( -1, 0, -1, 0 ) )
+    val nodeC = Node( Seq( Set(Seq( 0, 2 )) ), Seq( 0, -1, -1, -1 ) )
+    val nodeD = Node( Seq( Set(Seq( 0, 3 )) ), Seq( -1, -1, 0, -1 ) )
+
+    val mux1 = Node( Seq( Set(Seq( 1, 0 )), Set(Seq( 1, 1 )) ), Seq( 1, 0, 1, 0 ) )
+    val mux2 = Node( Seq( Set(Seq( 2, 0 )), Set(Seq( 2, 1 )), Set(Seq( 1, 2 )) ), Seq( 0, 2, -1, 1 ) )
+    val mux3 = Node( Seq( Set(Seq( 3, 0 )), Set(Seq( 3, 1 )), Set(Seq( 2, 2 )), Set(Seq( 1, 3 )) ), Seq( 1, 0, 2, 3 ) )
+
+    val reg1 = Node( Seq( Set(Seq( 2, 0 )), Set(Seq( 2, 1 )) ), Seq( 0, 1, 0, 1 ) )
+
+    nodeA.setC()
+    nodeB.setC()
+    nodeC.setC()
+    nodeD.setC()
+
+    mux1.setB()
+    mux2.setB()
+    mux3.setB()
+
+    reg1.setB()
+
+    mux1.setL( nodeA )
+    mux1.setR( nodeB )
+    mux2.setL( mux1 )
+    mux2.setR( nodeC )
+    mux3.setL( mux2 )
+    mux3.setR( nodeD )
+
+    reg1.setL( mux1 )
+    reg1.setR( mux1 )
+
+    val nodes = Set( nodeA, nodeB, nodeC, nodeD, mux1, mux2, mux3, reg1 )
+
+    // test constraints
+    assert( testLinks( nodes ), "Nodes must be connected properly" )
+    for ( n <- nodes )
+      assert( Node.satisfiesConstraints(n), "Node " + n + " must satisfy constraints" )
+
+    // test hardware
+    verifyHardware( nodes, Vector( nodeA, nodeB, nodeC, nodeD ), Vector( reg1, mux3 ) )
+  }
+
 }

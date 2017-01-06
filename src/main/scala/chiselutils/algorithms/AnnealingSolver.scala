@@ -657,13 +657,18 @@ object AnnealingSolver {
     file.renameTo( new java.io.File( fileOut ) )
   }
 
-  def toChisel( nodes : Set[Node], inputs : Set[(Fixed, Node)], validIn : Bool ) : Set[(Fixed, Node)] = {
+  def toChisel( nodes : Set[Node], inputs : Set[(Fixed, Node)], validIn : Bool ) : Bool = {
     for ( n <- inputs )
       n._2.setChisel( n._1 )
-    val outNodes = nodes.filter( _.getParentSet().size == 0 ).map( n => { ( n.genChisel(), n ) })
+    val outNodes = nodes.filter( _.parentsIsEmpty() ).map( n => { ( n.genChisel(), n ) })
+    val latency = outNodes.map( n => Node.latency( n._2 ) ).max
 
+    val validRegs = Vector.fill( latency ) { RegInit( Bool(false) ) }
+    validRegs(0) := validIn
+    for ( i <- 1 until latency )
+      validRegs(i) := validRegs(i - 1)
 
-    outNodes
+    validRegs.last
   }
 
 }
