@@ -771,7 +771,7 @@ class SumScheduleSuite extends TestSuite {
         }).to[Seq]
       }).to[Seq]
     }.to[Seq]
-    binFilterToCp( convFilter, imgSize )
+    binFilterToCp( convFilter, imgSize, throughput )
   }
 
   @Test def trinaryLayer {
@@ -949,6 +949,18 @@ class SumScheduleSuite extends TestSuite {
     println( "cost = " + nodes.size )
     val parNodes = outNodes.toVector
     verifyHardware( nodes, parNodes )
+  }
+
+  @Test def saveAndLoad {
+    val filterSize = ( 3, 3, 1, 1 )
+    val imgSize = ( 5, 5 )
+    val initNodes = AnnealingSolver.init( genTrinary( filterSize, imgSize ) )._1
+    AnnealingSolver.save( initNodes, "testSave.obj" )
+    val newNodes = AnnealingSolver.load( "testSave.obj" )
+    assert( initNodes.size == newNodes.size )
+    // cant do this as hashcodes change ...
+    //for ( n <- initNodes )
+    // assert( newNodes.contains(n) )
   }
 
 }

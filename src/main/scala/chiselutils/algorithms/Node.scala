@@ -166,7 +166,9 @@ object Node {
 
 }
 
-class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
+@SerialVersionUID(123L)
+class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]],
+  val ck : Seq[Int] ) extends Serializable {
 
   assert( dim >= 1, "The dimension of p must be atleast 1" )
 
@@ -175,9 +177,9 @@ class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]], val 
   private val parents = collection.mutable.Set[Node]()
   private var nodeType = -1
   private val available = new AtomicBoolean( false );
-  private var nodeChisel : Option[Fixed] = None
-  private var muxBool = Some( Bool() )
-  private var validBool = Bool()
+  @transient private var nodeChisel : Option[Fixed] = None
+  @transient private var muxBool = Some( Bool() )
+  @transient private var validBool = Bool()
 
   def getModIdx( i : Int ) : Int = { ck( ( i + nodeSize - 1 ) % nodeSize ) }
   def getModSet( i : Int ) : Set[Seq[Int]] = {

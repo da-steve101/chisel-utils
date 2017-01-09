@@ -5,6 +5,7 @@ package chiselutils.algorithms
 import Chisel._
 import collection.mutable.ArrayBuffer
 import util.Random
+import java.io._
 
 object AnnealingSolver {
 
@@ -671,4 +672,22 @@ object AnnealingSolver {
     validRegs.last
   }
 
+  def save( nodes : Set[Node], filename : String ) : Boolean = {
+    val oos = new ObjectOutputStream(new FileOutputStream(filename))
+    oos.writeObject(nodes)
+    oos.close
+    true
+  }
+
+  def load( filename : String ) : Set[Node] = {
+    val ois = new ObjectInputStream(new FileInputStream( filename )) {
+      override def resolveClass(desc: java.io.ObjectStreamClass): Class[_] = {
+        try { Class.forName(desc.getName, false, getClass.getClassLoader) }
+        catch { case ex: ClassNotFoundException => super.resolveClass(desc) }
+      }
+    }
+    val nodes = ois.readObject.asInstanceOf[Set[Node]]
+    ois.close
+    nodes
+  }
 }
