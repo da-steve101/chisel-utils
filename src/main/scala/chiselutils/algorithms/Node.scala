@@ -337,6 +337,7 @@ class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]], val 
       }
     }
     val newReg = RegNext( updateVal )
+    // should add a global pause/cont?
     // newReg := Mux( validBool, updateVal, newReg )
     nodeChisel = Some( newReg )
     nodeChisel.get

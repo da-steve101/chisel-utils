@@ -6,7 +6,10 @@ import scala.collection.mutable.ArrayBuffer
 import chiselutils.algorithms.Node
 import chiselutils.algorithms.Transforms
 import chiselutils.algorithms.AnnealingSolver
+import com.github.tototoshi.csv._
+import java.io.File
 import Chisel._
+
 
 class SumScheduleSuite extends TestSuite {
 
@@ -703,29 +706,11 @@ class SumScheduleSuite extends TestSuite {
     verifyHardware( nodes, outNodes )
   }
 
-  def genTrinary( filterSize : (Int, Int, Int, Int), imgSize : (Int, Int ), throughput : Int = 1 ) : Seq[Seq[Set[Seq[Int]]]] = {
-    val convFilter = Vector.fill(filterSize._4) {
-      ( 0 until filterSize._1).toVector.map( f1 => {
-        ( 0 until filterSize._2).toVector.map( f2 => {
-          ( 0 until filterSize._3).toVector.map( f3 => {
-            val num = Random.nextInt(100)
-            // cant deal with all 0 yet so just force not that case by putting 1 in mid
-            val inMid = ( f1 == filterSize._1/2 && f2 == filterSize._2/2 && f3 == filterSize._3/2 )
-            val trinary = {
-              if ( num < 8  )
-                1
-              else if ( num < 16 )
-                -1
-              else
-                0
-            }
-            trinary
-          })
-        })
-      })
-    }
+  def binFilterToCp( convFilter : Seq[Seq[Seq[Seq[Int]]]], imgSize : (Int, Int), throughput : Int = 1 ) : Seq[Seq[Set[Seq[Int]]]] = {
 
-    val cp = ( 0 until filterSize._4 ).map( convIdx => { // for each filter
+    val filterSize = ( convFilter(0)(0).size, convFilter(0)(0)(0).size, convFilter(0).size )
+
+    val cp = ( 0 until convFilter.size ).map( convIdx => { // for each filter
       val imgOut = ( 0 until imgSize._2 ).map( y => { // for each column in the img
         ( 0 until imgSize._1 ).map( x => { // for each row in that column
           ( 0 until filterSize._1 ).map( px => {
@@ -735,10 +720,10 @@ class SumScheduleSuite extends TestSuite {
                 val ypy = y + py - (filterSize._2/2)
                 ( xpx, ypy, px, py, d )
               }).filter{ case ( xpx, ypy, px, py, d ) => { // filter out zeros and any edge parts
-                val isZero = ( convFilter( convIdx )(py)(px)(d) == 0 )
+                val isZero = ( convFilter( convIdx )(d)(py)(px) == 0 )
                 ( xpx >= 0 && xpx < imgSize._1 && ypy >= 0 && ypy < imgSize._2 && !isZero )
               }}.map{ case ( xpx, ypy, px, py, d ) => {
-                val addIdx = if ( convFilter( convIdx )(py)(px)(d) == 1 ) 1 else 0
+                val addIdx = if ( convFilter( convIdx )(d)(py)(px) == 1 ) 1 else 0
                 val cyc = ( ypy*imgSize._2 + xpx )/throughput
                 val pos = (2*d) + addIdx + 2*filterSize._3*( ( ypy*imgSize._2 + xpx ) % throughput )
                 Vector( cyc, pos )
@@ -750,11 +735,6 @@ class SumScheduleSuite extends TestSuite {
       imgOut.zipWithIndex.groupBy( _._2 % throughput ).toVector.sortBy( _._1 ).map( _._2 ).map( v => v.map( s => s._1 ) )
     }).reduce( _ ++ _ ).filter( cList => cList.find( !_.isEmpty ).isDefined ) // collect all outputs
 
-    for ( convFilt <- cp ) {
-      for ( cSet <- convFilt ){
-        // assert( cSet.size > 0, "can't deal with empty sets" )
-      }
-    }
     val cpCoords = cp.map( convFilt => {
       convFilt.zipWithIndex.map( cSet => {
         cSet._1.map( v => {Vector( cSet._2 - v(0)) ++ v.drop(1)}.to[Seq] )
@@ -768,6 +748,30 @@ class SumScheduleSuite extends TestSuite {
       })
     })
     cpFinal
+  }
+
+  def genTrinary( filterSize : (Int, Int, Int, Int), imgSize : (Int, Int ), throughput : Int = 1 ) : Seq[Seq[Set[Seq[Int]]]] = {
+    val convFilter = Vector.fill(filterSize._4) {
+      ( 0 until filterSize._3).toVector.map( f3 => {
+        ( 0 until filterSize._1).toVector.map( f1 => {
+          ( 0 until filterSize._2).toVector.map( f2 => {
+            val num = Random.nextInt(100)
+            // cant deal with all 0 yet so just force not that case by putting 1 in mid
+            val inMid = ( f1 == filterSize._1/2 && f2 == filterSize._2/2 && f3 == filterSize._3/2 )
+            val trinary = {
+              if ( num < 8  )
+                1
+              else if ( num < 16 )
+                -1
+              else
+                0
+            }
+            trinary
+          }).to[Seq]
+        }).to[Seq]
+      }).to[Seq]
+    }.to[Seq]
+    binFilterToCp( convFilter, imgSize )
   }
 
   @Test def trinaryLayer {
@@ -920,6 +924,31 @@ class SumScheduleSuite extends TestSuite {
 
     // test hardware
     verifyHardware( nodes, Vector( reg1, mux3 ) )
+  }
+
+  def readCsv( filename : String ) : Seq[Seq[Seq[Seq[Int]]]] = {
+    val reader = CSVReader.open(new File(filename))
+    val floatData = reader.all().map( x => x.map( _.toFloat.toInt ).to[Seq] )
+    reader.close()
+    // group into the convolutional filters
+    floatData.toVector.to[Seq].grouped(3).toVector.to[Seq].grouped(3).toVector.to[Seq]
+  }
+
+  @Test def binarizedConv {
+
+    // read in a conv filter
+    val filename = "src/main/resources/conv1.csv"
+    val conv = readCsv( filename )
+    val ( initNodes, outNodes, x ) = AnnealingSolver.init( binFilterToCp( conv, ( 32, 32 ) ) )
+    println( "created " + initNodes.size + " nodes")
+    val nodes = AnnealingSolver.runPar( initNodes, 100000000, 1000000 )
+    assert( testLinks( nodes ), "Nodes must be connected properly" )
+    for ( n <- nodes )
+      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
+    AnnealingSolver.toDot( nodes, "binConv2.dot" )
+    println( "cost = " + nodes.size )
+    val parNodes = outNodes.toVector
+    verifyHardware( nodes, parNodes )
   }
 
 }
