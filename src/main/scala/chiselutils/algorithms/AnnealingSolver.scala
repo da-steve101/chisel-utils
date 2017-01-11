@@ -5,7 +5,8 @@ package chiselutils.algorithms
 import Chisel._
 import collection.mutable.ArrayBuffer
 import util.Random
-import java.io._
+import com.github.tototoshi.csv._
+import java.io.File
 
 object AnnealingSolver {
 
