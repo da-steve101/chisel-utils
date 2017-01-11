@@ -18,7 +18,7 @@ class SumScheduleSuite extends TestSuite {
   val nodeSize = 20
   val maxVal = 10
 
-  class MyMod( val myNodes : Set[Node], val outNodes : Seq[Node] ) extends Module {
+  class MyMod( val myNodes : Set[chiselutils.algorithms.Node], val outNodes : Seq[chiselutils.algorithms.Node] ) extends Module {
     val inNodes = myNodes.filter( _.isC() ).toVector.sortBy( n => n.uk(0).toList(0)(1) ) // have to put in order
     Predef.assert( inNodes.size == ( inNodes.last.uk(0).map( x => x(1) ).max + 1 ), "Should be correct number of inNodes" )
     val io = new Bundle {
@@ -958,6 +958,11 @@ class SumScheduleSuite extends TestSuite {
     AnnealingSolver.save( initNodes, "testSave.obj" )
     val newNodes = AnnealingSolver.load( "testSave.obj" )
     assert( initNodes.size == newNodes.size )
+    for ( n <- newNodes ) {
+      assert( initNodes.find( nn =>
+        nn.uk == n.uk && nn.ck == n.ck && n.letter() == nn.letter()
+      ).isDefined )
+    }
     // cant do this as hashcodes change ...
     //for ( n <- initNodes )
     // assert( newNodes.contains(n) )

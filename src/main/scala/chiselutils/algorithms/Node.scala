@@ -30,14 +30,12 @@ object Node {
   /** Create a node from compressed cp coords
     */
   def apply( uk : Seq[Set[Seq[Int]]], ck : Seq[Int] ) : Node = {
-    val dim = uk.head.iterator.next.size
-    val nodeSize = ck.size
     // ensure uk is sorted
     val ukSorted = uk.zipWithIndex.sortBy( _._1.hashCode )
     val mapping = ukSorted.map( _._2 ).zipWithIndex.sortBy( _._1 ).map( _._2 )
     val ukOut = ukSorted.map( _._1 )
     val ckOut = ck.map( cki => mapIdx( mapping, cki ) )
-    val n = new Node( dim, nodeSize, ukOut, ckOut )
+    val n = new Node( ukOut, ckOut )
     n
   }
 
@@ -166,20 +164,17 @@ object Node {
 
 }
 
-@SerialVersionUID(123L)
-class Node( val dim : Int, val nodeSize : Int, val uk : Seq[Set[Seq[Int]]],
-  val ck : Seq[Int] ) extends Serializable {
+class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
 
-  assert( dim >= 1, "The dimension of p must be atleast 1" )
-
+  private val nodeSize = ck.size
   private var lNode : Option[Node] = None
   private var rNode : Option[Node] = None
   private val parents = collection.mutable.Set[Node]()
   private var nodeType = -1
   private val available = new AtomicBoolean( false );
-  @transient private var nodeChisel : Option[Fixed] = None
-  @transient private var muxBool = Some( Bool() )
-  @transient private var validBool = Bool()
+  private var nodeChisel : Option[Fixed] = None
+  private var muxBool = Some( Bool() )
+  private var validBool = Bool()
 
   def getModIdx( i : Int ) : Int = { ck( ( i + nodeSize - 1 ) % nodeSize ) }
   def getModSet( i : Int ) : Set[Seq[Int]] = {

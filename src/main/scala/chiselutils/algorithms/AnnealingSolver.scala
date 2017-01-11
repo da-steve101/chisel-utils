@@ -672,22 +672,57 @@ object AnnealingSolver {
     validRegs.last
   }
 
+  private def nodeToStr( nodesVec : Seq[Node], n : Node ) : Seq[String] = {
+    val lStr = if ( n.getL().isDefined ) nodesVec.indexOf( n.getL().get ) else -1
+    val rStr = if ( n.getR().isDefined ) nodesVec.indexOf( n.getR().get ) else -1
+    List(n.toString(), lStr.toString(), rStr.toString())
+  }
+
+  private def nodeFromStr( s : String ) : Node = {
+    val typeReg = "[ABC]".r
+    val nodeType = typeReg.findFirstIn( s ).get
+    val curlyReg = """((?<=\{)[^}]*)""".r
+    val ukCk = curlyReg.findAllIn( s ).toList
+    assert( ukCk.size == 2 )
+    val uk = ukCk(0)
+    val ck = ukCk(1)
+    val ukNums = uk.split( """Set\(""" ).drop(1).map( s => // select each set
+      s.split("""Vector\(""").map( v => // select each vector in the set
+        """\d+""".r.findAllIn(v).toVector.to[Seq].map( d => d.toInt ) // convert each number in the vector
+      ).filterNot( _.isEmpty ).toSet // convert to Set
+    ).toVector
+    val ckNums = """[-]*\d""".r.findAllIn( ukCk(1) ).toVector.to[Seq].map( _.toInt )
+    val n = Node( ukNums, ckNums )
+    if ( nodeType == "A" )
+      n.setA()
+    else if ( nodeType == "B" )
+      n.setB()
+    else
+      n.setC()
+    n
+  }
+
   def save( nodes : Set[Node], filename : String ) : Boolean = {
-    val oos = new ObjectOutputStream(new FileOutputStream(filename))
-    oos.writeObject(nodes)
-    oos.close
+    val writer = CSVWriter.open( new File( filename ) )
+    val nodesVec = nodes.toVector
+    for ( n <- nodesVec )
+      writer.writeRow( nodeToStr( nodesVec, n ) )
+    writer.close
     true
   }
 
   def load( filename : String ) : Set[Node] = {
-    val ois = new ObjectInputStream(new FileInputStream( filename )) {
-      override def resolveClass(desc: java.io.ObjectStreamClass): Class[_] = {
-        try { Class.forName(desc.getName, false, getClass.getClassLoader) }
-        catch { case ex: ClassNotFoundException => super.resolveClass(desc) }
-      }
+    val reader = CSVReader.open( new File( filename ) )
+    val nodeEntries = reader.iterator.map( ln => {
+      ( nodeFromStr( ln(0) ), ln(1).toInt, ln(2).toInt )
+    }).toVector
+    reader.close
+    for ( nodeConn <- nodeEntries ) {
+      if ( nodeConn._2 != -1 )
+        nodeConn._1.setL( Some( nodeEntries( nodeConn._2 )._1 ) )
+      if ( nodeConn._3 != -1 )
+        nodeConn._1.setR( Some( nodeEntries( nodeConn._3 )._1 ) )
     }
-    val nodes = ois.readObject.asInstanceOf[Set[Node]]
-    ois.close
-    nodes
+    nodeEntries.map( _._1 ).toSet
   }
 }
