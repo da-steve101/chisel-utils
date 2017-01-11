@@ -166,7 +166,7 @@ object Node {
 
 class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
 
-  private val nodeSize = ck.size
+  val nodeSize = ck.size
   private var lNode : Option[Node] = None
   private var rNode : Option[Node] = None
   private val parents = collection.mutable.Set[Node]()
