@@ -35,7 +35,7 @@ class SumScheduleSuite extends TestSuite {
     val numIn = c.io.in.bits.size
     val numOut = c.io.out.bits.size
     val latency = c.myNodes.map( n => Node.latency( n ) ).max
-    val cycs = 10
+    val cycs = c.myNodes.iterator.next.ck.size * 2
     val testInputs = ( 0 until cycs ).toSeq.map( c =>
       ( 0 until numIn ).toSeq.map( ni => BigInt( myRand.nextInt( maxVal ) ) )
     )
@@ -45,6 +45,8 @@ class SumScheduleSuite extends TestSuite {
         poke( c.io.in.bits( i ), testInputs( cyc )( i ) )
       val validOut = peek( c.io.out.valid ) == 1
       peek( c.io.out )
+      //for ( n <- c.myNodes )
+      //  peek( n.getChisel().get )
       if ( validOut ) {
         for ( n <- c.outNodes.zipWithIndex ) {
           val node = n._1
@@ -52,8 +54,11 @@ class SumScheduleSuite extends TestSuite {
           val currOut = node.ck( currCyc )
           if ( currOut != -1 ) {
             val uki = node.uk( currOut )
-            val sum = uki.map( num => testInputs( cyc - num( 0 ) )( num( 1 ) ) ).sum
-            expect( c.io.out.bits( n._2 ), sum )
+            val rdy = uki.map( num => cyc - num( 0 ) >= 0 ).reduce( _ && _ )
+            if ( rdy ) {
+              val outNums = uki.toVector.map( num => testInputs( cyc - num( 0 ) )( num( 1 ) ) )
+              expect( c.io.out.bits( n._2 ), outNums.sum )
+            }
           }
         }
       }
@@ -148,6 +153,7 @@ class SumScheduleSuite extends TestSuite {
   def verifyHardware( nodes : Set[Node], outNodes : Seq[Node] ) {
     chiselMainTest( Array("--genHarness", "--compile", "--test", "--vcd", "--backend", "c"),
       () => Module( new MyMod( nodes, outNodes ) ) ) { c => new MyModTests( c ) }
+    // chiselMain( Array("--genHarness", "--backend", "v"), () => Module( new MyMod( nodes, outNodes ) ) )
   }
 
   /** Test the sum constraint

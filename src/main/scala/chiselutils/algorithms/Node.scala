@@ -173,7 +173,7 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   private var nodeType = -1
   private val available = new AtomicBoolean( false );
   private var nodeChisel : Option[Fixed] = None
-  private var muxBool = Some( Bool() )
+  private var muxBool : Option[Bool] = None
   private var validBool = Bool()
 
   def getModIdx( i : Int ) : Int = { ck( ( i + nodeSize - 1 ) % nodeSize ) }
@@ -295,7 +295,7 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
     uk.head.find( p => getP0( p ) == 0 ).isDefined
   }
 
-  private def getMuxSwitch() : Vector[Boolean] = {
+  private def getMuxSwitch() : Vector[Int] = {
     assert( isB() && lNode != rNode, "Must be mux to call muxSwitch" )
     val rUk = rNode.get.getUkNext()
     val rCk = rNode.get.getCkNext()
@@ -303,10 +303,17 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
     val lCk = lNode.get.getCkNext()
     ck.zip( lCk.zip( rCk ) ).map( cks => {
       // unnecessary to have both but better error checking
-      val isL = ( cks._1 == -1 && cks._2._1 == -1 ) || ( cks._1 != -1 && cks._2._1 != -1 && lUk( cks._2._1 ) == uk( cks._1 ) )
-      val isR = ( cks._1 == -1 && cks._2._2 == -1 ) || ( cks._1 != -1 && cks._2._2 != -1 && rUk( cks._2._2 ) == uk( cks._1 ) )
-      assert( isL || isR, "Cannot generate mux as no valid switch state" )
-      isR
+      val isL = ( cks._1 != -1 && cks._2._1 != -1 && lUk( cks._2._1 ) == uk( cks._1 ) )
+      val isR = ( cks._1 != -1 && cks._2._2 != -1 && rUk( cks._2._2 ) == uk( cks._1 ) )
+      val res = {
+        if ( isL == isR )
+          0
+        else if ( isL )
+          -1
+        else
+          1
+      }
+      res
     }).toVector
   }
 
@@ -328,8 +335,11 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
         when ( cntr === UInt( ck.size - 1 ) ) {
           cntr := UInt( 0 )
         }
-        val muxSwitch = ROM( getMuxSwitch().map( Bool( _ ) ) )
-        muxBool = Some( muxSwitch( cntr ) )
+        val muxSwitch = getMuxSwitch()
+        // TODO: use don't cares to simplify logic
+        val rIdxs = muxSwitch.zipWithIndex.filter( mi => mi._1 == 1 ).map( _._2 )
+        val rCond = rIdxs.map( ri => { cntr === UInt( ri ) }).reduce( _ || _ )
+        muxBool = Some( rCond )
         Mux( muxBool.get, rNode.get.genChisel(), lNode.get.genChisel() )
       }
     }
