@@ -319,6 +319,12 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
 
   def setChisel( n : Fixed ) = { nodeChisel = Some(n) }
   def getChisel() = { nodeChisel }
+  private def treeReduce( conds : Seq[Bool] ) : Bool = {
+    if ( conds.size == 1 )
+      return conds(0)
+    val newConds = conds.splitAt( conds.size / 2 )
+    treeReduce( newConds._1 ) || treeReduce( newConds._2 )
+  }
   def genChisel() : Fixed = {
     if ( nodeChisel.isDefined )
       return nodeChisel.get
@@ -338,7 +344,7 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
         val muxSwitch = getMuxSwitch()
         // TODO: use don't cares to simplify logic
         val rIdxs = muxSwitch.zipWithIndex.filter( mi => mi._1 == 1 ).map( _._2 )
-        val rCond = rIdxs.map( ri => { cntr === UInt( ri, log2Up( nodeSize ) ) }).reduce( _ || _ )
+        val rCond = treeReduce( rIdxs.map( ri => { cntr === UInt( ri, log2Up( nodeSize ) ) }) )
         muxBool = Some( rCond )
         Mux( muxBool.get, rNode.get.genChisel(), lNode.get.genChisel() )
       }
