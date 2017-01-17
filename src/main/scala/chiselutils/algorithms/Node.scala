@@ -330,15 +330,15 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
         lNode.get.genChisel()
       else {
         // otherwise mux ...
-        val cntr = RegInit( UInt( 0, log2Up( ck.size ) ) )
-        cntr := cntr + UInt( 1 )
-        when ( cntr === UInt( ck.size - 1 ) ) {
-          cntr := UInt( 0 )
+        val cntr = RegInit( UInt( 0, log2Up( nodeSize ) ) )
+        cntr := cntr + UInt( 1, log2Up( nodeSize ) )
+        when ( cntr === UInt( ck.size - 1, log2Up( nodeSize ) ) ) {
+          cntr := UInt( 0, log2Up( nodeSize ) )
         }
         val muxSwitch = getMuxSwitch()
         // TODO: use don't cares to simplify logic
         val rIdxs = muxSwitch.zipWithIndex.filter( mi => mi._1 == 1 ).map( _._2 )
-        val rCond = rIdxs.map( ri => { cntr === UInt( ri ) }).reduce( _ || _ )
+        val rCond = rIdxs.map( ri => { cntr === UInt( ri, log2Up( nodeSize ) ) }).reduce( _ || _ )
         muxBool = Some( rCond )
         Mux( muxBool.get, rNode.get.genChisel(), lNode.get.genChisel() )
       }
