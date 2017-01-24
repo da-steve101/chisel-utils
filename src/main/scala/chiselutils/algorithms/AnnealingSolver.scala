@@ -579,7 +579,7 @@ object AnnealingSolver {
                 nodes ++= res._1.drop(1)
 
                 for( n <- res._1.filterNot( _.parentsIsEmpty ) )
-                  assert( Node.isMinimal( n ), "node " + n + " should be minimal after swap " + res._2 )
+                  assert( Node.isMinimal( n ), "node " + n + " should be minimal after swap " + res._2 + " has parents " + n.getParentSet() )
                 res._1.drop(1).map( n => n.unlockNode() ) // only unlock new nodes
                 swapCount.incrementAndGet()
               }
