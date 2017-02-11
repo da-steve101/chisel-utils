@@ -698,8 +698,8 @@ class SumScheduleSuite extends TestSuite {
     }).toVector.to[Seq]
     val latAdd = AnnealingSolver.needLatency( Vector( cpCoords ).to[Seq] )
     println( "latAdd = " + latAdd )
-    val cp = cpCoords.zipWithIndex.map( cSet => {
-      cSet._1.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) }.to[Seq])
+    val cp = cpCoords.map( cSet => {
+      cSet.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) }.to[Seq])
     })
     var nodes = AnnealingSolver.init( Vector( cp ).to[Seq] )._1
     nodes = AnnealingSolver.runPar( nodes, 100000000, 1000000 )
