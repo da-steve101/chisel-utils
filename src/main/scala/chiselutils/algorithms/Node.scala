@@ -55,13 +55,12 @@ object Node {
      *       AND |c_(l,i-1%n)| != 0 AND |c_(r,i-1%n)| != 0 ) OR
      *       |cki| = 0
      */
-    if ( !n.getL().isDefined || !n.getR().isDefined )
+    if ( !n.getChild( 0 ).isDefined || !n.getChild( 1 ).isDefined )
       return false
-
     // look for violation of constraint using find
     val violation = n.ck.zipWithIndex.find( cki => { n.getUki(cki._1).size != 0 &&
-      ( n.getL().get.getModIdx( cki._2 ) == -1 ||
-        n.getR().get.getModIdx( cki._2 ) == -1 ||
+      ( n.getChild( 0 ).get.getModIdx( cki._2 ) == -1 ||
+        n.getChild( 1 ).get.getModIdx( cki._2 ) == -1 ||
         !n.testAddUnion( cki._2 )
       )
     }).isDefined
@@ -74,7 +73,7 @@ object Node {
     /* Constraint B states that for all cki in ck,
      * cki = incr( c_(l,i-1%n) ) OR incr( c_(r,i-1%n) ) OR |cki| = 0
      */
-    if ( !n.getL().isDefined || !n.getR().isDefined )
+    if ( !n.getChild( 0 ).isDefined || !n.getChild( 1 ).isDefined )
       return false
 
     // look for violation using find
@@ -135,9 +134,9 @@ object Node {
   def verifyNode( n : Node ) : Boolean = {
     if ( !satisfiesConstraints( n ) )
       return false
-    if ( n.getL().isDefined && !satisfiesConstraints( n.getL().get ) )
+    if ( n.getChild( 0 ).isDefined && !satisfiesConstraints( n.getChild( 0 ).get ) )
       return false
-    if ( n.getR().isDefined && !satisfiesConstraints( n.getR().get ) )
+    if ( n.getChild( 1 ).isDefined && !satisfiesConstraints( n.getChild( 1 ).get ) )
       return false
     if ( n.getParents().size > 0 ) {
       val violated = n.getParents().find( np => {
@@ -167,8 +166,7 @@ object Node {
 class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
 
   val nodeSize = ck.size
-  private var lNode : Option[Node] = None
-  private var rNode : Option[Node] = None
+  private val children = ArrayBuffer[Option[Node]]()
   private val parents = collection.mutable.Set[Node]()
   private var nodeType = -1
   private val available = new AtomicBoolean( false );
@@ -225,23 +223,23 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
 
   def getUkPrev() : Seq[Set[Seq[Int]]] = { uk.map( uki => uki.map( v => { List( v(0) - 1 ) ++ v.drop(1) }.to[Seq] )) }
   def getUkNext() : Seq[Set[Seq[Int]]] = { uk.map( uki => uki.map( v => { List( v(0) + 1 ) ++ v.drop(1) }.to[Seq] )) }
-  def getL() = { lNode }
-  def getR() = { rNode }
-  def setL( n : Node ) : Unit = { setL( Some( n ) ) }
-  def setL( n : Option[Node] ) : Unit = {
-    assert( isLocked(), "Node should be locked to setL" )
-    if ( lNode.isDefined && lNode != rNode )
-      lNode.get.removeParent( this )
-    lNode = n
-    if ( n.isDefined )
-      n.get.addParent( this )
+  def numChildren() : Int = children.size
+  def getChild( i : Int ) : Option[Node] = {
+    if ( numChildren() > i )
+      children(i)
+    else
+      None
   }
-  def setR( n : Node ) : Unit = { setR( Some( n ) ) }
-  def setR( n : Option[Node] ) : Unit = {
-    assert( isLocked(), "Node should be locked to setR" )
-    if ( rNode.isDefined && lNode != rNode )
-      rNode.get.removeParent( this )
-    rNode = n
+  def setChild( n : Node, i : Int ) : Unit = { setChild( Some( n ), i ) }
+  def setChild( n : Option[Node], i : Int ) : Unit = {
+    assert( isLocked(), "Node should be locked to setChild" )
+    // if ( getChild(i).isDefined ) this is how it should be
+    val lrSameParent = { ( getChild( 0 ).isDefined && getChild( 1 ).isDefined && getChild( 0 ) == getChild( 1 ) ) }
+    if ( getChild(i).isDefined && !lrSameParent )
+      getChild(i).get.removeParent( this )
+    while ( numChildren() <= i )
+      children.append( None )
+    children(i) = n
     if ( n.isDefined )
       n.get.addParent( this )
   }
@@ -263,13 +261,14 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   /** Returns if cki = ( incr( c_(l,i-1%n) U c_(r,i-1%n) )
     */
   def testAddUnion( i : Int ) : Boolean = {
-    if ( !lNode.isDefined || !rNode.isDefined )
-      return false
-    val leftSet = lNode.get.getModSet( i )
-    val rightSet = rNode.get.getModSet( i )
-    val allSet = incr( leftSet ++ rightSet )
+    val childSets = children.map( child => {
+      if ( !child.isDefined )
+        return false
+      child.get.getModSet( i )
+    })
+    val allSet = incr( childSets.reduce( _ ++ _ ) )
     val thisSet = getCki( i )
-    if ( leftSet.size + rightSet.size != thisSet.size || allSet.size != thisSet.size )
+    if ( childSets.map( _.size ).reduce( _ + _ ) != thisSet.size || allSet.size != thisSet.size )
       return false
     allSet == thisSet
   }
@@ -277,10 +276,15 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   /** Returns if cki = incr( c_(l,i-1%n) ) or incr( c_(r,i-1%n) )
     */
   def testMux( i : Int ) : Boolean = {
-    if ( !lNode.isDefined || !rNode.isDefined )
+    if ( numChildren() != 2 )
       return false
-    val leftSet = incr( lNode.get.getModSet( i ) )
-    val rightSet = incr( rNode.get.getModSet( i ) )
+    val childSets = children.map( child => {
+      if ( !child.isDefined )
+        return false
+      child.get.getModSet( i )
+    })
+    val leftSet = incr( childSets(0) )
+    val rightSet = incr( childSets(1) )
     leftSet == getCki( i ) || rightSet == getCki( i )
   }
 
@@ -288,7 +292,7 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
     * And if the element in that set has it's first element as 0
     */ 
   def testTermination() : Boolean = {
-    if ( lNode.isDefined || rNode.isDefined )
+    if ( numChildren() != 0 )
       return false
     if ( uk.size != 1 || uk.head.size != 1)
       return false
@@ -296,11 +300,11 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   }
 
   private def getMuxSwitch() : Vector[Int] = {
-    assert( isB() && lNode != rNode, "Must be mux to call muxSwitch" )
-    val rUk = rNode.get.getUkNext()
-    val rCk = rNode.get.getCkNext()
-    val lUk = lNode.get.getUkNext()
-    val lCk = lNode.get.getCkNext()
+    assert( isB() && numChildren() == 2, "Must be mux to call muxSwitch" )
+    val lUk = getChild( 0 ).get.getUkNext()
+    val lCk = getChild( 0 ).get.getCkNext()
+    val rUk = getChild( 1 ).get.getUkNext()
+    val rCk = getChild( 1 ).get.getCkNext()
     ck.zip( lCk.zip( rCk ) ).map( cks => {
       // unnecessary to have both but better error checking
       val isL = ( cks._1 != -1 && cks._2._1 != -1 && lUk( cks._2._1 ) == uk( cks._1 ) )
@@ -320,6 +324,8 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   def setChisel( n : Fixed ) = { nodeChisel = Some(n) }
   def getChisel() = { nodeChisel }
   private def treeReduce( conds : Seq[Bool] ) : Bool = {
+    if ( conds.size == 0 )
+      return Bool(false)
     if ( conds.size == 1 )
       return conds(0)
     val newConds = conds.splitAt( conds.size / 2 )
@@ -331,9 +337,10 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
     assert( isA() || isB(), "Must set the C nodes before the others can be generated" )
     val updateVal = {
       if ( isA() )
-        lNode.get.genChisel() + rNode.get.genChisel()
-      else if ( lNode == rNode )
-        lNode.get.genChisel()
+        children.map( child => child.get.genChisel() ).reduce( _ + _ )
+      //else if ( numChildren() == 1 ) should be like this ...
+      else if ( numChildren() == 2 && getChild( 0 ) == getChild( 1 ) )
+        getChild( 0 ).get.genChisel()
       else {
         // otherwise mux ...
         val cntr = RegInit( UInt( 0, log2Up( nodeSize ) ) )
@@ -346,7 +353,7 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
         val rIdxs = muxSwitch.zipWithIndex.filter( mi => mi._1 == 1 ).map( _._2 )
         val rCond = treeReduce( rIdxs.map( ri => { cntr === UInt( ri, log2Up( nodeSize ) ) }) )
         muxBool = Some( rCond )
-        Mux( muxBool.get, rNode.get.genChisel(), lNode.get.genChisel() )
+        Mux( muxBool.get, getChild( 1 ).get.genChisel(), getChild( 0 ).get.genChisel() )
       }
     }
     val newReg = RegNext( updateVal )

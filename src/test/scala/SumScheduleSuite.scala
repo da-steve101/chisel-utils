@@ -45,8 +45,8 @@ class SumScheduleSuite extends TestSuite {
         poke( c.io.in.bits( i ), testInputs( cyc )( i ) )
       val validOut = peek( c.io.out.valid ) == 1
       peek( c.io.out )
-      //for ( n <- c.myNodes )
-      //  peek( n.getChisel().get )
+      for ( n <- c.myNodes )
+        peek( n.getChisel().get )
       if ( validOut ) {
         for ( n <- c.outNodes.zipWithIndex ) {
           val node = n._1
@@ -88,32 +88,32 @@ class SumScheduleSuite extends TestSuite {
 
   def testLinks( nodes : Set[Node] ) : Boolean = {
     for ( n <- nodes ) {
-      if ( n.getL().isDefined ) {
-        if ( !nodes.contains( n.getL().get ) ) {
-          println( n.getL().get + " not in nodes (L) " )
+      if ( n.getChild( 0 ).isDefined ) {
+        if ( !nodes.contains( n.getChild( 0 ).get ) ) {
+          println( n.getChild( 0 ).get + " not in nodes (L) " )
           return false
         }
-        if ( !n.getL().get.getParents().contains( n ) ) {
+        if ( !n.getChild( 0 ).get.getParents().contains( n ) ) {
           println( "Parents doesn't have n (L)" )
           return false
         }
-        for ( p <- n.getL().get.getParents() ) {
+        for ( p <- n.getChild( 0 ).get.getParents() ) {
           if ( !nodes.contains( p ) ) {
             println( "Parent node not in nodes (L)" )
             return false
           }
         }
       }
-      if ( n.getR().isDefined ) {
-        if ( !nodes.contains( n.getR().get ) ) {
-          println( n.getR().get + " not in nodes (R) " )
+      if ( n.getChild( 1 ).isDefined ) {
+        if ( !nodes.contains( n.getChild( 1 ).get ) ) {
+          println( n.getChild( 1 ).get + " not in nodes (R) " )
           return false
         }
-        if ( !n.getR().get.getParents().contains( n ) ) {
+        if ( !n.getChild( 1 ).get.getParents().contains( n ) ) {
           println( "Parents doesn't have n (R)" )
           return false
         }
-        for ( p <- n.getR().get.getParents() ) {
+        for ( p <- n.getChild( 1 ).get.getParents() ) {
           if ( !nodes.contains( p ) ) {
             println( "Parent node not in nodes (R)" )
             return false
@@ -175,8 +175,8 @@ class SumScheduleSuite extends TestSuite {
     })
     val nodeB = Node( decr(nodeBCuK.map( _._1 )), nodeAcK.drop(1) ++ nodeAcK.take(1) )
     val nodeC = Node( decr(nodeBCuK.map( _._2 )), nodeAcK.drop(1) ++ nodeAcK.take(1) )
-    nodeA.setL( Some(nodeB) )
-    nodeA.setR( Some(nodeC) )
+    nodeA.setChild( Some(nodeB), 0 )
+    nodeA.setChild( Some(nodeC), 1 )
     assert( Node.satisfiesConstraintA( nodeA ) )
   }
 
@@ -218,8 +218,8 @@ class SumScheduleSuite extends TestSuite {
       else
         Node( nodeCuK, rCk )
     }
-    nodeA.setL( Some(nodeB) )
-    nodeA.setR( Some(nodeC) )
+    nodeA.setChild( Some(nodeB), 0 )
+    nodeA.setChild( Some(nodeC), 1 )
     assert( Node.satisfiesConstraintB( nodeA ) )
   }
 
@@ -242,12 +242,12 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwapCk = node_cK.takeRight( 1 ) ++ node_cK.dropRight( 1 )
     val nodeSwap = Node( nodeSwapUk, nodeSwapCk )
     nodeSwap.setA()
-    nodeSwap.setL( Some(nodeA) )
-    nodeSwap.setR( Some(nodeB) )
+    nodeSwap.setChild( Some(nodeA), 0 )
+    nodeSwap.setChild( Some(nodeB), 1 )
     val nodePar = Node( nodeSwap.getUkNext(), nodeSwap.getCkNext() )
     nodePar.setB()
-    nodePar.setL( Some(nodeSwap) )
-    nodePar.setR( Some(nodeSwap) )
+    nodePar.setChild( Some(nodeSwap), 0 )
+    nodePar.setChild( Some(nodeSwap), 1 )
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
     assert( Node.satisfiesConstraintA( nodeSwap ) )
@@ -272,14 +272,14 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwapCk = node_cK.takeRight( 1 ) ++ node_cK.dropRight( 1 )
     val nodeSwap = Node( nodeSwapUk, nodeSwapCk )
     nodeSwap.setB()
-    nodeSwap.setL( Some(nodeA) )
-    nodeSwap.setR( Some(nodeB) )
+    nodeSwap.setChild( Some(nodeA), 0 )
+    nodeSwap.setChild( Some(nodeB), 1 )
     val nodeParUk = incr( nodeSwapUk )
     val nodeParCk = nodeSwapCk.takeRight( 1 ) ++ nodeSwapCk.dropRight( 1 )
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setB()
-    nodePar.setL( Some(nodeSwap) )
-    nodePar.setR( Some(nodeSwap) )
+    nodePar.setChild( Some(nodeSwap), 0 )
+    nodePar.setChild( Some(nodeSwap), 1 )
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
     assert( Node.satisfiesConstraintB( nodeSwap ) )
@@ -310,17 +310,17 @@ class SumScheduleSuite extends TestSuite {
     val nodeOther = Node( nodeOtherUk, nodeOtherCk )
     nodeOther.setA()
 
-    nodeSwap.setL( Some(nodeA) )
-    nodeSwap.setR( Some(nodeA) )
-    nodeOther.setL( Some(nodeB) )
-    nodeOther.setR( Some(nodeC) )
+    nodeSwap.setChild( Some(nodeA), 0 )
+    nodeSwap.setChild( Some(nodeA), 1 )
+    nodeOther.setChild( Some(nodeB), 0 )
+    nodeOther.setChild( Some(nodeC), 1 )
 
     val nodeParUk = incr( nodeSwap.uk.zip( nodeOther.uk ).map( z => z._1 ++ z._2 ) )
     val nodeParCk = nodeSwap.getCkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setA()
-    nodePar.setL( Some(nodeSwap) )
-    nodePar.setR( Some(nodeOther) )
+    nodePar.setChild( Some(nodeSwap), 0 )
+    nodePar.setChild( Some(nodeOther), 1 )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -355,17 +355,17 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwap = Node( nodeA.getUkNext().map( z => nodeB.getUkNext().head ++ z ), node_cK1 )
     val nodeOther = Node( nodeC.getUkNext().map( z => nodeD.getUkNext().head ++ z ), node_cK1 )
     nodeSwap.setA()
-    nodeSwap.setL( Some(nodeA) )
-    nodeSwap.setR( Some(nodeB) )
-    nodeOther.setL( Some(nodeC) )
-    nodeOther.setR( Some(nodeD) )
+    nodeSwap.setChild( Some(nodeA), 0 )
+    nodeSwap.setChild( Some(nodeB), 1 )
+    nodeOther.setChild( Some(nodeC), 0 )
+    nodeOther.setChild( Some(nodeD), 1 )
     nodeOther.setA()
 
     val nodeParUk = nodeSwap.getUkNext().map( z => nodeOther.getUkNext().head ++ z )
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setA()
-    nodePar.setL( Some(nodeSwap) )
-    nodePar.setR( Some(nodeOther) )
+    nodePar.setChild( Some(nodeSwap), 0 )
+    nodePar.setChild( Some(nodeOther), 1 )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -394,17 +394,17 @@ class SumScheduleSuite extends TestSuite {
     val nodeOther = Node( nodeB.getUkNext(), nodeB.getCkNext() )
     nodeSwap.setB()
     nodeOther.setB()
-    nodeSwap.setL( Some(nodeA) )
-    nodeSwap.setR( Some(nodeA) )
-    nodeOther.setL( Some(nodeB) )
-    nodeOther.setR( Some(nodeB) )
+    nodeSwap.setChild( Some(nodeA), 0 )
+    nodeSwap.setChild( Some(nodeA), 1 )
+    nodeOther.setChild( Some(nodeB), 0 )
+    nodeOther.setChild( Some(nodeB), 1 )
 
     val nodeParUk = incr( nodeSwap.uk.zip( nodeOther.uk ).map( z => z._1 ++ z._2 ) )
     val nodeParCk = nodeSwap.getCkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setA()
-    nodePar.setL( Some(nodeSwap) )
-    nodePar.setR( Some(nodeOther) )
+    nodePar.setChild( Some(nodeSwap), 0 )
+    nodePar.setChild( Some(nodeOther), 1 )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -434,17 +434,17 @@ class SumScheduleSuite extends TestSuite {
     val nodeOther = Node( nodeOtherUk, nodeB.getCkNext().map( x => if ( x == -1 ) -1 else myRand.nextInt(2) ))
     nodeSwap.setB()
     nodeOther.setB()
-    nodeSwap.setL( Some(nodeA) )
-    nodeSwap.setR( Some(nodeA) )
-    nodeOther.setL( Some(nodeB) )
-    nodeOther.setR( Some(nodeC) )
+    nodeSwap.setChild( Some(nodeA), 0 )
+    nodeSwap.setChild( Some(nodeA), 1 )
+    nodeOther.setChild( Some(nodeB), 0 )
+    nodeOther.setChild( Some(nodeC), 1 )
 
     val nodeParUk = incr( nodeOther.uk.map( z => nodeSwap.uk.head ++ z ) )
     val nodeParCk = nodeOther.getCkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setA()
-    nodePar.setL( Some(nodeSwap) )
-    nodePar.setR( Some(nodeOther) )
+    nodePar.setChild( Some(nodeSwap), 0 )
+    nodePar.setChild( Some(nodeOther), 1 )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -472,17 +472,17 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwap = Node( nodeA.getUkNext(), nodeA.getCkNext() )
     val nodeOther = Node( nodeB.getUkNext(), nodeB.getCkNext() )
     nodeSwap.setB()
-    nodeSwap.setL( Some(nodeA) )
-    nodeSwap.setR( Some(nodeA) )
+    nodeSwap.setChild( Some(nodeA), 0 )
+    nodeSwap.setChild( Some(nodeA), 1 )
     nodeOther.setB()
-    nodeOther.setL( Some(nodeB) )
-    nodeOther.setR( Some(nodeB) )
+    nodeOther.setChild( Some(nodeB), 0 )
+    nodeOther.setChild( Some(nodeB), 1 )
 
     val nodeParUk = nodeSwap.getUkNext() ++ nodeOther.getUkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setB()
-    nodePar.setL( Some(nodeSwap) )
-    nodePar.setR( Some(nodeOther) )
+    nodePar.setChild( Some(nodeSwap), 0 )
+    nodePar.setChild( Some(nodeOther), 1 )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -511,17 +511,17 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwap = Node( nodeA.getUkNext().map( z => nodeB.getUkNext().head ++ z ), nodeA.getCkNext() )
     val nodeOther = Node( nodeC.getUkNext().map( z => nodeB.getUkNext().head ++ z ), nodeC.getCkNext() )
     nodeSwap.setA()
-    nodeSwap.setL( Some(nodeA) )
-    nodeSwap.setR( Some(nodeB) )
+    nodeSwap.setChild( Some(nodeA), 0 )
+    nodeSwap.setChild( Some(nodeB), 1 )
     nodeOther.setA()
-    nodeOther.setL( Some(nodeB) )
-    nodeOther.setR( Some(nodeC) )
+    nodeOther.setChild( Some(nodeB), 0 )
+    nodeOther.setChild( Some(nodeC), 1 )
 
     val nodeParUk = nodeSwap.getUkNext() ++ nodeOther.getUkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setB()
-    nodePar.setL( Some(nodeSwap) )
-    nodePar.setR( Some(nodeOther) )
+    nodePar.setChild( Some(nodeSwap), 0 )
+    nodePar.setChild( Some(nodeOther), 1 )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -556,17 +556,17 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwap = Node( nodeA.getUkNext() ++ nodeB.getUkNext(), node_cK1.map( x => if ( x != -1 && x < 2 ) x else -1 ) )
     val nodeOther = Node( nodeC.getUkNext() ++ nodeD.getUkNext(), node_cK1.map( x => if ( x < 2 ) -1 else x - 2 ) )
     nodeSwap.setB()
-    nodeSwap.setL( Some(nodeA) )
-    nodeSwap.setR( Some(nodeB) )
+    nodeSwap.setChild( Some(nodeA), 0 )
+    nodeSwap.setChild( Some(nodeB), 1 )
     nodeOther.setB()
-    nodeOther.setL( Some(nodeC) )
-    nodeOther.setR( Some(nodeD) )
+    nodeOther.setChild( Some(nodeC), 0 )
+    nodeOther.setChild( Some(nodeD), 1 )
 
     val nodeParUk = nodeSwap.getUkNext() ++ nodeOther.getUkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setB()
-    nodePar.setL( Some(nodeSwap) )
-    nodePar.setR( Some(nodeOther) )
+    nodePar.setChild( Some(nodeSwap), 0 )
+    nodePar.setChild( Some(nodeOther), 1 )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -599,11 +599,11 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwap = Node( nodeA.getUkNext(), node_cK1.map( x => if ( x == 0 ) 0 else -1 ) )
     val nodeOther = Node( nodeB.getUkNext() ++ nodeC.getUkNext(), node_cK1.map( x => if ( x < 1 ) -1 else x - 1 ) )
     nodeSwap.setB()
-    nodeSwap.setL( Some(nodeA) )
-    nodeSwap.setR( Some(nodeA) )
+    nodeSwap.setChild( Some(nodeA), 0 )
+    nodeSwap.setChild( Some(nodeA), 1 )
     nodeOther.setB()
-    nodeOther.setL( Some(nodeB) )
-    nodeOther.setR( Some(nodeC) )
+    nodeOther.setChild( Some(nodeB), 0 )
+    nodeOther.setChild( Some(nodeC), 1 )
 
     val nodeParUk = nodeSwap.getUkNext() ++ nodeOther.getUkNext()
     val nodeParCkComb = nodeSwap.getCkNext().zip( nodeOther.getCkNext() ).map( cks => {
@@ -616,8 +616,8 @@ class SumScheduleSuite extends TestSuite {
     })
     val nodePar = Node( nodeParUk, nodeParCkComb )
     nodePar.setB()
-    nodePar.setL( Some(nodeSwap) )
-    nodePar.setR( Some(nodeOther) )
+    nodePar.setChild( Some(nodeSwap), 0 )
+    nodePar.setChild( Some(nodeOther), 1 )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -650,16 +650,16 @@ class SumScheduleSuite extends TestSuite {
       // verify all nodes
       for ( n <- nodes ) {
         val valid = Node.satisfiesConstraints(n)
-        val lValid = { if ( n.getL().isDefined ) n.getL().get.hasParent(n) else true }
-        val rValid = { if ( n.getR().isDefined ) n.getR().get.hasParent(n) else true }
+        val lValid = { if ( n.getChild( 0 ).isDefined ) n.getChild( 0 ).get.hasParent(n) else true }
+        val rValid = { if ( n.getChild( 1 ).isDefined ) n.getChild( 1 ).get.hasParent(n) else true }
         if ( !valid || !lValid || !rValid ) {
           println( "Node = " + n )
-          println( "Node.getL() = " + n.getL() )
-          println( "Node.getR() = " + n.getR() )
-          if ( n.getL().isDefined )
-            println( "Node.getL().parents = " + n.getL().get.getParents() )
-          if ( n.getR().isDefined )
-            println( "Node.getR().parents = " + n.getR().get.getParents() )
+          println( "Node.getChild( 0 ) = " + n.getChild( 0 ) )
+          println( "Node.getChild( 1 ) = " + n.getChild( 1 ) )
+          if ( n.getChild( 0 ).isDefined )
+            println( "Node.getChild( 0 ).parents = " + n.getChild( 0 ).get.getParents() )
+          if ( n.getChild( 1 ).isDefined )
+            println( "Node.getChild( 1 ).parents = " + n.getChild( 1 ).get.getParents() )
         }
         assert( valid && lValid && rValid, "Node " + n + " did not satisfy constraints" )
       }
@@ -823,13 +823,13 @@ class SumScheduleSuite extends TestSuite {
     // Node@103207052(A)
     val nOtherR = nOtherL
 
-    nodePar.setL( Some(node) )
-    node.setL( Some(nOther) )
-    node.setR( Some(nSwap) )
-    nSwap.setL( Some(nSwapL) )
-    nSwap.setR( Some(nSwapR) )
-    nOther.setL( Some(nOtherL) )
-    nOther.setR( Some(nOtherR) )
+    nodePar.setChild( Some(node), 0 )
+    node.setChild( Some(nOther), 0 )
+    node.setChild( Some(nSwap), 1 )
+    nSwap.setChild( Some(nSwapL), 0 )
+    nSwap.setChild( Some(nSwapR), 1 )
+    nOther.setChild( Some(nOtherL), 0 )
+    nOther.setChild( Some(nOtherR), 1 )
 
     val nodeSeq = Seq( node, nSwap, nOther )
     for ( n <- nodeSeq )
@@ -838,10 +838,10 @@ class SumScheduleSuite extends TestSuite {
     val res = Transforms.trySwap( node, nSwap, true )
 
     // clean up parents of merged nodes
-    nSwap.setL( None )
-    nSwap.setR( None )
-    nOther.setL( None )
-    nOther.setR( None )
+    nSwap.setChild( None, 0 )
+    nSwap.setChild( None, 1 )
+    nOther.setChild( None, 0 )
+    nOther.setChild( None, 1 )
 
     res._1.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
   }
@@ -866,11 +866,11 @@ class SumScheduleSuite extends TestSuite {
     val nSwapR = Node( Seq(Set(Seq(4, 1), Seq(3, 1), Seq(8, 1))), Seq(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
     nSwapR.setA()
 
-    nodePar.setL( Some(node) )
-    node.setL( Some( nSwap ) )
-    node.setR( Some( nOther ) )
-    nSwap.setL( Some(nSwapL) )
-    nSwap.setR( Some(nSwapR) )
+    nodePar.setChild( Some(node), 0 )
+    node.setChild( Some( nSwap ), 0 )
+    node.setChild( Some( nOther ), 1 )
+    nSwap.setChild( Some(nSwapL), 0 )
+    nSwap.setChild( Some(nSwapR), 1 )
 
     val nodeSeq = Seq( node, nSwap, nOther )
     for ( n <- nodeSeq )
@@ -879,10 +879,10 @@ class SumScheduleSuite extends TestSuite {
     val res = Transforms.trySwap( node, nSwap, true )
 
     // clean up parents of merged nodes
-    nSwap.setL( None )
-    nSwap.setR( None )
-    nOther.setL( None )
-    nOther.setR( None )
+    nSwap.setChild( None, 0 )
+    nSwap.setChild( None, 1 )
+    nOther.setChild( None, 0 )
+    nOther.setChild( None, 1 )
 
     res._1.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
 
@@ -911,15 +911,15 @@ class SumScheduleSuite extends TestSuite {
 
     reg1.setB()
 
-    mux1.setL( nodeA )
-    mux1.setR( nodeB )
-    mux2.setL( mux1 )
-    mux2.setR( nodeC )
-    mux3.setL( mux2 )
-    mux3.setR( nodeD )
+    mux1.setChild( nodeA, 0 )
+    mux1.setChild( nodeB, 1 )
+    mux2.setChild( mux1, 0 )
+    mux2.setChild( nodeC, 1 )
+    mux3.setChild( mux2, 0 )
+    mux3.setChild( nodeD, 1 )
 
-    reg1.setL( mux1 )
-    reg1.setR( mux1 )
+    reg1.setChild( mux1, 0 )
+    reg1.setChild( mux1, 1 )
 
     val nodes = Set( nodeA, nodeB, nodeC, nodeD, mux1, mux2, mux3, reg1 )
 
