@@ -67,11 +67,11 @@ class SumScheduleSuite extends TestSuite {
   }
 
   def genUk( noUk : Int, setSize : Int ) : Seq[Set[Seq[Int]]] = {
-    Vector.fill( noUk ) { List.fill( setSize ) { List.fill( dim ) { myRand.nextInt( maxVal ) + 1 }.to[Seq]}.to[Set] }
+    Vector.fill( noUk ) { Vector.fill( setSize ) { Vector.fill( dim ) { myRand.nextInt( maxVal ) + 1 }.to[Seq]}.to[Set] }
   }
 
   def genTermUk( x : Int  ) : Seq[Set[Seq[Int]]] = {
-    Vector(  List( (List( 0 ) ++ List.fill( dim - 1 ) { x }).to[Seq] ).to[Set] )
+    Vector(  Vector( (Vector( 0 ) ++ Vector.fill( dim - 1 ) { x }).to[Seq] ).to[Set] )
   }
 
   def genCk( noUk : Int ) : Seq[Int] = {
@@ -88,34 +88,18 @@ class SumScheduleSuite extends TestSuite {
 
   def testLinks( nodes : Set[Node] ) : Boolean = {
     for ( n <- nodes ) {
-      if ( n.getChild( 0 ).isDefined ) {
-        if ( !nodes.contains( n.getChild( 0 ).get ) ) {
-          println( n.getChild( 0 ).get + " not in nodes (L) " )
+      for ( c <- n.getChildren() ) {
+        if ( !nodes.contains( c ) ) {
+          println( c + " not in nodes" )
           return false
         }
-        if ( !n.getChild( 0 ).get.getParents().contains( n ) ) {
-          println( "Parents doesn't have n (L)" )
+        if ( !c.getParents().contains( n ) ) {
+          println( "Parents doesn't have :" + n  )
           return false
         }
-        for ( p <- n.getChild( 0 ).get.getParents() ) {
+        for ( p <- c.getParents() ) {
           if ( !nodes.contains( p ) ) {
-            println( "Parent node not in nodes (L)" )
-            return false
-          }
-        }
-      }
-      if ( n.getChild( 1 ).isDefined ) {
-        if ( !nodes.contains( n.getChild( 1 ).get ) ) {
-          println( n.getChild( 1 ).get + " not in nodes (R) " )
-          return false
-        }
-        if ( !n.getChild( 1 ).get.getParents().contains( n ) ) {
-          println( "Parents doesn't have n (R)" )
-          return false
-        }
-        for ( p <- n.getChild( 1 ).get.getParents() ) {
-          if ( !nodes.contains( p ) ) {
-            println( "Parent node not in nodes (R)" )
+            println( "Parent node not in nodes:" + p )
             return false
           }
         }
@@ -151,9 +135,14 @@ class SumScheduleSuite extends TestSuite {
   }
 
   def verifyHardware( nodes : Set[Node], outNodes : Seq[Node] ) {
+    assert( testLinks( nodes ) )
     chiselMainTest( Array("--genHarness", "--compile", "--test", "--vcd", "--backend", "c"),
       () => Module( new MyMod( nodes, outNodes ) ) ) { c => new MyModTests( c ) }
-    // chiselMain( Array("--genHarness", "--backend", "v"), () => Module( new MyMod( nodes, outNodes ) ) )
+  }
+
+  def generateHardware( nodes : Set[Node], outNodes : Seq[Node] ) {
+    testLinks( nodes )
+    chiselMain( Array("--genHarness", "--backend", "v"), () => Module( new MyMod( nodes, outNodes ) ) )
   }
 
   /** Test the sum constraint
@@ -175,8 +164,8 @@ class SumScheduleSuite extends TestSuite {
     })
     val nodeB = Node( decr(nodeBCuK.map( _._1 )), nodeAcK.drop(1) ++ nodeAcK.take(1) )
     val nodeC = Node( decr(nodeBCuK.map( _._2 )), nodeAcK.drop(1) ++ nodeAcK.take(1) )
-    nodeA.setChild( Some(nodeB), 0 )
-    nodeA.setChild( Some(nodeC), 1 )
+    nodeA.addChild( nodeB )
+    nodeA.addChild( nodeC )
     assert( Node.satisfiesConstraintA( nodeA ) )
   }
 
@@ -218,8 +207,8 @@ class SumScheduleSuite extends TestSuite {
       else
         Node( nodeCuK, rCk )
     }
-    nodeA.setChild( Some(nodeB), 0 )
-    nodeA.setChild( Some(nodeC), 1 )
+    nodeA.addChild( nodeB )
+    nodeA.addChild( nodeC )
     assert( Node.satisfiesConstraintB( nodeA ) )
   }
 
@@ -242,22 +231,23 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwapCk = node_cK.takeRight( 1 ) ++ node_cK.dropRight( 1 )
     val nodeSwap = Node( nodeSwapUk, nodeSwapCk )
     nodeSwap.setA()
-    nodeSwap.setChild( Some(nodeA), 0 )
-    nodeSwap.setChild( Some(nodeB), 1 )
+    nodeSwap.addChild( nodeA )
+    nodeSwap.addChild( nodeB )
     val nodePar = Node( nodeSwap.getUkNext(), nodeSwap.getCkNext() )
     nodePar.setB()
-    nodePar.setChild( Some(nodeSwap), 0 )
-    nodePar.setChild( Some(nodeSwap), 1 )
+    nodePar.addChild( nodeSwap )
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
     assert( Node.satisfiesConstraintA( nodeSwap ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
+    val nodeList = Transforms.trySwap( nodePar )._1
 
     assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
     assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isB() )
+
+    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
   }
 
   @Test def testSwap2 {
@@ -272,24 +262,26 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwapCk = node_cK.takeRight( 1 ) ++ node_cK.dropRight( 1 )
     val nodeSwap = Node( nodeSwapUk, nodeSwapCk )
     nodeSwap.setB()
-    nodeSwap.setChild( Some(nodeA), 0 )
-    nodeSwap.setChild( Some(nodeB), 1 )
+    nodeSwap.addChild( nodeA )
+    nodeSwap.addChild( nodeB )
     val nodeParUk = incr( nodeSwapUk )
     val nodeParCk = nodeSwapCk.takeRight( 1 ) ++ nodeSwapCk.dropRight( 1 )
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setB()
-    nodePar.setChild( Some(nodeSwap), 0 )
-    nodePar.setChild( Some(nodeSwap), 1 )
+    nodePar.addChild( nodeSwap )
+    nodePar.addChild( nodeSwap )
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
     assert( Node.satisfiesConstraintB( nodeSwap ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
+    val nodeList = Transforms.trySwap( nodePar )._1
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
     assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isB() )
+
+    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
   }
 
   @Test def testSwap4 {
@@ -310,17 +302,16 @@ class SumScheduleSuite extends TestSuite {
     val nodeOther = Node( nodeOtherUk, nodeOtherCk )
     nodeOther.setA()
 
-    nodeSwap.setChild( Some(nodeA), 0 )
-    nodeSwap.setChild( Some(nodeA), 1 )
-    nodeOther.setChild( Some(nodeB), 0 )
-    nodeOther.setChild( Some(nodeC), 1 )
+    nodeSwap.addChild( nodeA )
+    nodeOther.addChild( nodeB )
+    nodeOther.addChild( nodeC )
 
     val nodeParUk = incr( nodeSwap.uk.zip( nodeOther.uk ).map( z => z._1 ++ z._2 ) )
     val nodeParCk = nodeSwap.getCkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setA()
-    nodePar.setChild( Some(nodeSwap), 0 )
-    nodePar.setChild( Some(nodeOther), 1 )
+    nodePar.addChild( nodeSwap )
+    nodePar.addChild( nodeOther )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -329,21 +320,20 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintA( nodeOther ) )
     assert( Node.satisfiesConstraintA( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
+    val nodeList = Transforms.trySwap( nodePar )._1
 
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
-    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isA() )
+    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
+    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isA() )
+
+    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
   }
 
-  @Test def testSwap5 {
+  @Test def testSwap4B {
     val nodeAuK = genTermUk( 0 ) // termination setA
     val nodeBuK = genTermUk( 1 ) // termination setB
     val nodeCuK = genTermUk( 2 ) // termination setC
-    val nodeDuK = genTermUk( 3 ) // termination setC
-    val nodeParCk = genCk( 1 )
-    val node_cK = nodeParCk.drop(2) ++ nodeParCk.take(2)
-    val node_cK1 = nodeParCk.drop(1) ++ nodeParCk.take(1)
+    val nodeDuK = genTermUk( 3 ) // termination setD
+    val node_cK = genCk( 1 )
     val nodeA = Node( nodeAuK, node_cK )
     val nodeB = Node( nodeBuK, node_cK )
     val nodeC = Node( nodeCuK, node_cK )
@@ -352,34 +342,102 @@ class SumScheduleSuite extends TestSuite {
     nodeB.setC()
     nodeC.setC()
     nodeD.setC()
-    val nodeSwap = Node( nodeA.getUkNext().map( z => nodeB.getUkNext().head ++ z ), node_cK1 )
-    val nodeOther = Node( nodeC.getUkNext().map( z => nodeD.getUkNext().head ++ z ), node_cK1 )
-    nodeSwap.setA()
-    nodeSwap.setChild( Some(nodeA), 0 )
-    nodeSwap.setChild( Some(nodeB), 1 )
-    nodeOther.setChild( Some(nodeC), 0 )
-    nodeOther.setChild( Some(nodeD), 1 )
+    val nodeSwap = Node( nodeA.getUkNext(), nodeA.getCkNext() )
+    nodeSwap.setB()
+    val nodeOtherUk = incr( nodeBuK.zip( nodeCuK.zip( nodeDuK ) ).map( z => z._1 ++ z._2._1 ++ z._2._2 ) )
+    val nodeOtherCk = nodeB.getCkNext()
+    val nodeOther = Node( nodeOtherUk, nodeOtherCk )
     nodeOther.setA()
 
-    val nodeParUk = nodeSwap.getUkNext().map( z => nodeOther.getUkNext().head ++ z )
+    nodeSwap.addChild( nodeA )
+    nodeOther.addChild( nodeB )
+    nodeOther.addChild( nodeC )
+    nodeOther.addChild( nodeD )
+
+    val nodeParUk = incr( nodeSwap.uk.zip( nodeOther.uk ).map( z => z._1 ++ z._2 ) )
+    val nodeParCk = nodeSwap.getCkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setA()
-    nodePar.setChild( Some(nodeSwap), 0 )
-    nodePar.setChild( Some(nodeOther), 1 )
+    nodePar.addChild( nodeSwap )
+    nodePar.addChild( nodeOther )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
     assert( Node.satisfiesConstraintC( nodeC ) )
     assert( Node.satisfiesConstraintC( nodeD ) )
-    assert( Node.satisfiesConstraintA( nodeSwap ) )
+    assert( Node.satisfiesConstraintB( nodeSwap ) )
     assert( Node.satisfiesConstraintA( nodeOther ) )
     assert( Node.satisfiesConstraintA( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
+    val nodeList = Transforms.trySwap( nodePar )._1
 
     assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
     assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isA() )
     assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isA() )
+
+    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
+  }
+
+  @Test def testSwap5 {
+    for ( numInputs <- 4 to 9 ) {
+      val uksIn = ( 0 until numInputs ).map( i => genTermUk( i ) )
+      val nodeParCk = genCk( 1 )
+      val node_cK = nodeParCk.drop(2) ++ nodeParCk.take(2)
+      val node_cK1 = nodeParCk.drop(1) ++ nodeParCk.take(1)
+      val nodesIn = uksIn.map( uk => Node( uk, node_cK ) )
+      for ( n <- nodesIn )
+        n.setC()
+      val groupingSize = {
+        if ( numInputs == 4 )
+          2
+        else if ( numInputs == 5 )
+          3
+        else if ( numInputs == 6 )
+          Random.nextInt(2) + 2
+        else if ( numInputs > 7 )
+          3
+        else
+          -1
+      }
+      val grps =  {
+        if ( numInputs == 7 ) {
+          val dblGrps = nodesIn.grouped(2).toList
+          Vector( dblGrps(0), dblGrps(1), dblGrps(2) ++ dblGrps(3) )
+        } else
+          nodesIn.grouped( groupingSize )
+      }
+      val addNodes = grps.map( grp => {
+        val uk = Vector( grp.map( _.getUkNext().head ).reduce( _ ++ _ ) )
+        val n = Node( uk, node_cK1 )
+        n.setA()
+        n.addChildren( grp.toSet )
+        n
+      }).toSet
+
+      val nodeParUk = Vector( addNodes.map( _.getUkNext().head ).reduce( _ ++ _ ) )
+      val nodePar = Node( nodeParUk, nodeParCk )
+      nodePar.setA()
+      nodePar.addChildren( addNodes )
+
+      for ( n <- nodesIn )
+        assert( Node.satisfiesConstraintC( n ) )
+      for ( n <- addNodes )
+        assert( Node.satisfiesConstraintA( n ) )
+      assert( Node.satisfiesConstraintA( nodePar ) )
+
+      val nodeList = Transforms.trySwap( nodePar )._1
+
+      assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
+      assert( nodeList.tail.map( _.numChildren() ).sum == numInputs )
+      for ( n <- nodeList.tail ) {
+        if ( n.numChildren() > 1 )
+          assert( Node.satisfiesConstraintA( n ) && n.isA() )
+        else
+          assert( Node.satisfiesConstraintB( n ) && n.isB() )
+      }
+
+      verifyHardware( nodeList.toSet ++ nodesIn.toSet, List( nodeList(0) ) )
+    }
   }
 
   @Test def testSwap6 {
@@ -394,17 +452,17 @@ class SumScheduleSuite extends TestSuite {
     val nodeOther = Node( nodeB.getUkNext(), nodeB.getCkNext() )
     nodeSwap.setB()
     nodeOther.setB()
-    nodeSwap.setChild( Some(nodeA), 0 )
-    nodeSwap.setChild( Some(nodeA), 1 )
-    nodeOther.setChild( Some(nodeB), 0 )
-    nodeOther.setChild( Some(nodeB), 1 )
+    nodeSwap.addChild( nodeA )
+    nodeSwap.addChild( nodeA )
+    nodeOther.addChild( nodeB )
+    nodeOther.addChild( nodeB )
 
     val nodeParUk = incr( nodeSwap.uk.zip( nodeOther.uk ).map( z => z._1 ++ z._2 ) )
     val nodeParCk = nodeSwap.getCkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setA()
-    nodePar.setChild( Some(nodeSwap), 0 )
-    nodePar.setChild( Some(nodeOther), 1 )
+    nodePar.addChild( nodeSwap )
+    nodePar.addChild( nodeOther )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -412,10 +470,12 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeOther ) )
     assert( Node.satisfiesConstraintA( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
+    val nodeList = Transforms.trySwap( nodePar )._1
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isA() )
+
+    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
   }
 
   @Test def testSwap7 {
@@ -434,17 +494,16 @@ class SumScheduleSuite extends TestSuite {
     val nodeOther = Node( nodeOtherUk, nodeB.getCkNext().map( x => if ( x == -1 ) -1 else myRand.nextInt(2) ))
     nodeSwap.setB()
     nodeOther.setB()
-    nodeSwap.setChild( Some(nodeA), 0 )
-    nodeSwap.setChild( Some(nodeA), 1 )
-    nodeOther.setChild( Some(nodeB), 0 )
-    nodeOther.setChild( Some(nodeC), 1 )
+    nodeSwap.addChild( nodeA )
+    nodeOther.addChild( nodeB )
+    nodeOther.addChild( nodeC )
 
     val nodeParUk = incr( nodeOther.uk.map( z => nodeSwap.uk.head ++ z ) )
     val nodeParCk = nodeOther.getCkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setA()
-    nodePar.setChild( Some(nodeSwap), 0 )
-    nodePar.setChild( Some(nodeOther), 1 )
+    nodePar.addChild( nodeSwap )
+    nodePar.addChild( nodeOther )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -453,11 +512,18 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeOther ) )
     assert( Node.satisfiesConstraintA( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
+    val nodeList = Transforms.trySwap( nodePar )._1
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isA() )
     assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isA() )
+
+    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
+
+  }
+
+  @Test def testSwap9 {
+    assert( false )
   }
 
   @Test def testSwap10 {
@@ -472,17 +538,17 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwap = Node( nodeA.getUkNext(), nodeA.getCkNext() )
     val nodeOther = Node( nodeB.getUkNext(), nodeB.getCkNext() )
     nodeSwap.setB()
-    nodeSwap.setChild( Some(nodeA), 0 )
-    nodeSwap.setChild( Some(nodeA), 1 )
+    nodeSwap.addChild( nodeA )
+    nodeSwap.addChild( nodeA )
     nodeOther.setB()
-    nodeOther.setChild( Some(nodeB), 0 )
-    nodeOther.setChild( Some(nodeB), 1 )
+    nodeOther.addChild( nodeB )
+    nodeOther.addChild( nodeB )
 
     val nodeParUk = nodeSwap.getUkNext() ++ nodeOther.getUkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setB()
-    nodePar.setChild( Some(nodeSwap), 0 )
-    nodePar.setChild( Some(nodeOther), 1 )
+    nodePar.addChild( nodeSwap )
+    nodePar.addChild( nodeOther )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -490,10 +556,12 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeOther ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
+    val nodeList = Transforms.trySwap( nodePar )._1
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
+
+    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
   }
 
   @Test def testSwap11 {
@@ -511,17 +579,17 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwap = Node( nodeA.getUkNext().map( z => nodeB.getUkNext().head ++ z ), nodeA.getCkNext() )
     val nodeOther = Node( nodeC.getUkNext().map( z => nodeB.getUkNext().head ++ z ), nodeC.getCkNext() )
     nodeSwap.setA()
-    nodeSwap.setChild( Some(nodeA), 0 )
-    nodeSwap.setChild( Some(nodeB), 1 )
+    nodeSwap.addChild( nodeA )
+    nodeSwap.addChild( nodeB )
     nodeOther.setA()
-    nodeOther.setChild( Some(nodeB), 0 )
-    nodeOther.setChild( Some(nodeC), 1 )
+    nodeOther.addChild( nodeB )
+    nodeOther.addChild( nodeC )
 
     val nodeParUk = nodeSwap.getUkNext() ++ nodeOther.getUkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setB()
-    nodePar.setChild( Some(nodeSwap), 0 )
-    nodePar.setChild( Some(nodeOther), 1 )
+    nodePar.addChild( nodeSwap )
+    nodePar.addChild( nodeOther )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -530,11 +598,17 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintA( nodeOther ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
+    val nodeList = Transforms.trySwap( nodePar )._1
 
     assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
     assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isB() )
+
+    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
+  }
+
+  @Test def testSwap11B {
+    assert( false )
   }
 
   @Test def testSwap12 {
@@ -556,17 +630,17 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwap = Node( nodeA.getUkNext() ++ nodeB.getUkNext(), node_cK1.map( x => if ( x != -1 && x < 2 ) x else -1 ) )
     val nodeOther = Node( nodeC.getUkNext() ++ nodeD.getUkNext(), node_cK1.map( x => if ( x < 2 ) -1 else x - 2 ) )
     nodeSwap.setB()
-    nodeSwap.setChild( Some(nodeA), 0 )
-    nodeSwap.setChild( Some(nodeB), 1 )
+    nodeSwap.addChild( nodeA )
+    nodeSwap.addChild( nodeB )
     nodeOther.setB()
-    nodeOther.setChild( Some(nodeC), 0 )
-    nodeOther.setChild( Some(nodeD), 1 )
+    nodeOther.addChild( nodeC )
+    nodeOther.addChild( nodeD )
 
     val nodeParUk = nodeSwap.getUkNext() ++ nodeOther.getUkNext()
     val nodePar = Node( nodeParUk, nodeParCk )
     nodePar.setB()
-    nodePar.setChild( Some(nodeSwap), 0 )
-    nodePar.setChild( Some(nodeOther), 1 )
+    nodePar.addChild( nodeSwap )
+    nodePar.addChild( nodeOther )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -576,11 +650,23 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeOther ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
+    val nodeList = Transforms.trySwap( nodePar )._1
 
+    println( "test12: " + nodeList )
+    println( nodeList(0).getChildren() )
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
     assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isB() )
+
+    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
+  }
+
+  @Test def testSwap12B {
+    assert( false )
+  }
+
+  @Test def testSwap12C {
+    assert( false )
   }
 
   @Test def testSwap13 {
@@ -599,11 +685,11 @@ class SumScheduleSuite extends TestSuite {
     val nodeSwap = Node( nodeA.getUkNext(), node_cK1.map( x => if ( x == 0 ) 0 else -1 ) )
     val nodeOther = Node( nodeB.getUkNext() ++ nodeC.getUkNext(), node_cK1.map( x => if ( x < 1 ) -1 else x - 1 ) )
     nodeSwap.setB()
-    nodeSwap.setChild( Some(nodeA), 0 )
-    nodeSwap.setChild( Some(nodeA), 1 )
+    nodeSwap.addChild( nodeA )
+    nodeSwap.addChild( nodeA )
     nodeOther.setB()
-    nodeOther.setChild( Some(nodeB), 0 )
-    nodeOther.setChild( Some(nodeC), 1 )
+    nodeOther.addChild( nodeB )
+    nodeOther.addChild( nodeC )
 
     val nodeParUk = nodeSwap.getUkNext() ++ nodeOther.getUkNext()
     val nodeParCkComb = nodeSwap.getCkNext().zip( nodeOther.getCkNext() ).map( cks => {
@@ -616,8 +702,8 @@ class SumScheduleSuite extends TestSuite {
     })
     val nodePar = Node( nodeParUk, nodeParCkComb )
     nodePar.setB()
-    nodePar.setChild( Some(nodeSwap), 0 )
-    nodePar.setChild( Some(nodeOther), 1 )
+    nodePar.addChild( nodeSwap )
+    nodePar.addChild( nodeOther )
 
     assert( Node.satisfiesConstraintC( nodeA ) )
     assert( Node.satisfiesConstraintC( nodeB ) )
@@ -626,11 +712,33 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintB( nodeOther ) )
     assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar, nodeSwap )._1
+    val nodeList = Transforms.trySwap( nodePar )._1
 
     assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
     assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
     assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isB() )
+
+    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
+  }
+
+  @Test def testSwap16 {
+    assert( false )
+  }
+
+  @Test def testSwap18 {
+    assert( false )
+  }
+
+  @Test def testSwap19 {
+    assert( false )
+  }
+
+  @Test def testSwap20 {
+    assert( false )
+  }
+
+  @Test def testSwap21 {
+    assert( false )
   }
 
   /* commented out as locking assertions fail for serial method
@@ -823,25 +931,23 @@ class SumScheduleSuite extends TestSuite {
     // Node@103207052(A)
     val nOtherR = nOtherL
 
-    nodePar.setChild( Some(node), 0 )
-    node.setChild( Some(nOther), 0 )
-    node.setChild( Some(nSwap), 1 )
-    nSwap.setChild( Some(nSwapL), 0 )
-    nSwap.setChild( Some(nSwapR), 1 )
-    nOther.setChild( Some(nOtherL), 0 )
-    nOther.setChild( Some(nOtherR), 1 )
+    nodePar.addChild( node )
+    node.addChild( nOther )
+    node.addChild( nSwap )
+    nSwap.addChild( nSwapL )
+    nSwap.addChild( nSwapR )
+    nOther.addChild( nOtherL )
+    nOther.addChild( nOtherR )
 
     val nodeSeq = Seq( node, nSwap, nOther )
     for ( n <- nodeSeq )
       assert( Node.isMinimal( n ), "node " + n + " should be minimal" )
 
-    val res = Transforms.trySwap( node, nSwap, true )
+    val res = Transforms.trySwap( node, true )
 
     // clean up parents of merged nodes
-    nSwap.setChild( None, 0 )
-    nSwap.setChild( None, 1 )
-    nOther.setChild( None, 0 )
-    nOther.setChild( None, 1 )
+    nSwap.removeChildren()
+    nOther.removeChildren()
 
     res._1.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
   }
@@ -866,23 +972,21 @@ class SumScheduleSuite extends TestSuite {
     val nSwapR = Node( Seq(Set(Seq(4, 1), Seq(3, 1), Seq(8, 1))), Seq(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
     nSwapR.setA()
 
-    nodePar.setChild( Some(node), 0 )
-    node.setChild( Some( nSwap ), 0 )
-    node.setChild( Some( nOther ), 1 )
-    nSwap.setChild( Some(nSwapL), 0 )
-    nSwap.setChild( Some(nSwapR), 1 )
+    nodePar.addChild( node )
+    node.addChild(  nSwap  )
+    node.addChild(  nOther  )
+    nSwap.addChild( nSwapL )
+    nSwap.addChild( nSwapR )
 
     val nodeSeq = Seq( node, nSwap, nOther )
     for ( n <- nodeSeq )
       assert( Node.isMinimal( n ), "node " + n + " should be minimal" )
 
-    val res = Transforms.trySwap( node, nSwap, true )
+    val res = Transforms.trySwap( node, true )
 
     // clean up parents of merged nodes
-    nSwap.setChild( None, 0 )
-    nSwap.setChild( None, 1 )
-    nOther.setChild( None, 0 )
-    nOther.setChild( None, 1 )
+    nSwap.removeChildren()
+    nOther.removeChildren()
 
     res._1.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
 
@@ -911,15 +1015,15 @@ class SumScheduleSuite extends TestSuite {
 
     reg1.setB()
 
-    mux1.setChild( nodeA, 0 )
-    mux1.setChild( nodeB, 1 )
-    mux2.setChild( mux1, 0 )
-    mux2.setChild( nodeC, 1 )
-    mux3.setChild( mux2, 0 )
-    mux3.setChild( nodeD, 1 )
+    mux1.addChild( nodeA )
+    mux1.addChild( nodeB )
+    mux2.addChild( mux1 )
+    mux2.addChild( nodeC )
+    mux3.addChild( mux2 )
+    mux3.addChild( nodeD )
 
-    reg1.setChild( mux1, 0 )
-    reg1.setChild( mux1, 1 )
+    reg1.addChild( mux1 )
+    reg1.addChild( mux1 )
 
     val nodes = Set( nodeA, nodeB, nodeC, nodeD, mux1, mux2, mux3, reg1 )
 
@@ -930,6 +1034,26 @@ class SumScheduleSuite extends TestSuite {
 
     // test hardware
     verifyHardware( nodes, Vector( reg1, mux3 ) )
+  }
+
+  @Test def testVerifyHardware {
+    val nPar = Node( Vector(Set(Vector(2, 0), Vector(2, 1), Vector(2, 2), Vector(2, 3))), Vector(-1, -1, 0, 0, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, 0) )
+    nPar.setA()
+    val nAdd = Node( Vector(Set(Vector(1, 1), Vector(1, 2), Vector(1, 3))), Vector(-1, 0, 0, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, 0, -1) )
+    nAdd.setA()
+    val nReg = Node( Vector(Set(Vector(1, 0))), Vector(-1, 0, 0, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, 0, -1) )
+    nReg.setB()
+    nPar.addChild( nAdd )
+    nPar.addChild( nReg )
+    val nIn = ( 0 until 4 ).toList.map( i =>
+      Node( Vector(Set(Vector(0, i))), Vector( 0, 0, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, 0, -1, -1 ) )
+    )
+    for ( n <- nIn )
+      n.setC()
+    nReg.addChild( nIn.head )
+    nAdd.addChildren( nIn.tail )
+
+    verifyHardware( Set( nPar, nAdd, nReg ) ++ nIn.toSet, List( nPar ) )
   }
 
   def readCsv( filename : String ) : Seq[Seq[Seq[Seq[Int]]]] = {

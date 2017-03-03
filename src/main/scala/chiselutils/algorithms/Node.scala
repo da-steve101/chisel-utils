@@ -7,6 +7,7 @@ package chiselutils.algorithms
 import Chisel._
 import collection.mutable.ArrayBuffer
 import java.util.concurrent.atomic.AtomicBoolean
+import scala.util.Random
 
 object Node {
 
@@ -47,6 +48,10 @@ object Node {
     Node( uk.to[Seq], ck )
   }
 
+  def apply( uk : Vector[Set[Vector[Int]]], ck : Vector[Int] ) : Node = {
+    Node( uk.map( s => s.map( v => v.to[Seq] ) ), ck.to[Seq] )
+  }
+
   /** Check if a node satisfies constraint A
     */
   def satisfiesConstraintA( n : Node ) : Boolean = {
@@ -55,16 +60,15 @@ object Node {
      *       AND |c_(l,i-1%n)| != 0 AND |c_(r,i-1%n)| != 0 ) OR
      *       |cki| = 0
      */
-    if ( !n.getChild( 0 ).isDefined || !n.getChild( 1 ).isDefined )
+    if ( n.numChildren() != 2 && n.numChildren() != 3 )
       return false
     // look for violation of constraint using find
-    val violation = n.ck.zipWithIndex.find( cki => { n.getUki(cki._1).size != 0 &&
-      ( n.getChild( 0 ).get.getModIdx( cki._2 ) == -1 ||
-        n.getChild( 1 ).get.getModIdx( cki._2 ) == -1 ||
-        !n.testAddUnion( cki._2 )
+    val violation = n.ck.zipWithIndex.find( cki => {
+      n.getUki(cki._1).size != 0 && (
+        n.getChildren().find( _.getModIdx( cki._2 ) == -1 ).isDefined || !n.testAddUnion( cki._2 )
       )
-    }).isDefined
-    !violation
+    })
+    !violation.isDefined
   }
 
   /** Check if a node satisfies constraint B
@@ -73,14 +77,14 @@ object Node {
     /* Constraint B states that for all cki in ck,
      * cki = incr( c_(l,i-1%n) ) OR incr( c_(r,i-1%n) ) OR |cki| = 0
      */
-    if ( !n.getChild( 0 ).isDefined || !n.getChild( 1 ).isDefined )
+    if ( n.numChildren() != 1 && n.numChildren() != 2 )
       return false
 
     // look for violation using find
-    val violation = n.ck.zipWithIndex.find( cki => { n.getUki(cki._1).size != 0 &&
-      !n.testMux( cki._2 )
-    }).isDefined
-    !violation
+    val violation = n.ck.zipWithIndex.find( cki => {
+      n.getUki(cki._1).size != 0 && !n.testMux( cki._2 )
+    })
+    !violation.isDefined
   }
 
   /** Check if a node satisfies constraint C
@@ -89,6 +93,9 @@ object Node {
     /* Constraint C states that the union of all cki in ck has a size of 1
      * and that element has a value of 0 in the first position of the list
      */
+    if ( n.numChildren() != 0 )
+      return false
+
     n.testTermination( )
   }
 
@@ -134,9 +141,8 @@ object Node {
   def verifyNode( n : Node ) : Boolean = {
     if ( !satisfiesConstraints( n ) )
       return false
-    if ( n.getChild( 0 ).isDefined && !satisfiesConstraints( n.getChild( 0 ).get ) )
-      return false
-    if ( n.getChild( 1 ).isDefined && !satisfiesConstraints( n.getChild( 1 ).get ) )
+
+    if ( n.getChildren().find( c => !satisfiesConstraints( c ) ).isDefined )
       return false
     if ( n.getParents().size > 0 ) {
       val violated = n.getParents().find( np => {
@@ -156,17 +162,14 @@ object Node {
     uk.map( uki => uki.map( v => { List( v(0) + 1 ) ++ v.drop(1) }.to[Seq] ))
   }
 
-  def latency( n : Node ) : Int = {
-    val expandedCk = n.ck.map( cki => if ( cki == -1 ) 0 else n.uk( cki ).map( v => v(0) ).max )
-    expandedCk.zipWithIndex.map( i => i._1 - i._2 ).max
-  }
+  def latency( n : Node ) : Int = n.uk.map( s => s.map( x => x(0) ).max ).max
 
 }
 
 class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
 
   val nodeSize = ck.size
-  private val children = ArrayBuffer[Option[Node]]()
+  private val children = collection.mutable.Set[Node]()
   private val parents = collection.mutable.Set[Node]()
   private var nodeType = -1
   private val available = new AtomicBoolean( false );
@@ -183,7 +186,7 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   }
 
   private def getP0( p : Seq[Int] ) = p.head
-  private def incr( p : Seq[Int] ) : Seq[Int] = List( p.head + 1 ) ++ p.drop(1)
+  private def incr( p : Seq[Int] ) : Seq[Int] = Vector( p.head + 1 ) ++ p.drop(1)
   private def incr( q : Set[Seq[Int]] )  : Set[Seq[Int]] = q.map( incr(_) )
 
   def isLocked() = !available.get()
@@ -221,38 +224,67 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   }
   def getCki( i : Int ) : Set[Seq[Int]] = getUki( ck( i ) )
 
+  def isAdd() = isA()
+  def isAdd2() = isA() && numChildren() == 2
+  def isAdd3() = isA() && numChildren() == 3
+  def isReg() = isB() && numChildren() == 1
+  def isMux() = isB() && numChildren() == 2
+
   def getUkPrev() : Seq[Set[Seq[Int]]] = { uk.map( uki => uki.map( v => { List( v(0) - 1 ) ++ v.drop(1) }.to[Seq] )) }
   def getUkNext() : Seq[Set[Seq[Int]]] = { uk.map( uki => uki.map( v => { List( v(0) + 1 ) ++ v.drop(1) }.to[Seq] )) }
   def numChildren() : Int = children.size
-  def getChild( i : Int ) : Option[Node] = {
-    if ( numChildren() > i )
-      children(i)
-    else
-      None
+  def hasChild( n : Node ) : Boolean = { children.contains( n ) }
+  def getChildren() : Set[Node] = { children.toSet }
+  def removeChild( c : Node ) : Unit = {
+    assert( hasChild( c ), "Trying to remove non-child" )
+    assert( isLocked(), "Node should be locked to removeChild" )
+    c.removeParent( this )
+    children -= c
   }
-  def setChild( n : Node, i : Int ) : Unit = { setChild( Some( n ), i ) }
-  def setChild( n : Option[Node], i : Int ) : Unit = {
-    assert( isLocked(), "Node should be locked to setChild" )
-    // if ( getChild(i).isDefined ) this is how it should be
-    val lrSameParent = { ( getChild( 0 ).isDefined && getChild( 1 ).isDefined && getChild( 0 ) == getChild( 1 ) ) }
-    if ( getChild(i).isDefined && !lrSameParent )
-      getChild(i).get.removeParent( this )
-    while ( numChildren() <= i )
-      children.append( None )
-    children(i) = n
-    if ( n.isDefined )
-      n.get.addParent( this )
+  def removeChildren() : Unit = {
+    for ( child <- getChildren() )
+      removeChild( child )
+  }
+  def addChild( n : Node ) : Unit = {
+    assert( isLocked(), "Node should be locked to addChild" )
+    children += n
+    n.addParent( this )
+  }
+  def addChildren( nS : Iterable[Node] ) : Unit = {
+    for ( n <- nS )
+      addChild( n )
+  }
+  def getRandomChild() : (Node, Set[Node]) = {
+    val idx = Random.nextInt( children.size )
+    val randChild = getChildIter().drop( idx ).next()
+    ( randChild, children.toSet - randChild )
+  }
+  def getRandomChildOrder() : Seq[Node] = {
+    Random.shuffle( children.toVector )
+  }
+  def getOnlyChild() : Node = {
+    assert( numChildren() == 1, "Cannot get only child, not 1 child!" )
+    getChildIter().next()
+  }
+  def getChildIter() : Iterator[Node] = {
+    children.iterator
+  }
+  def replaceIfChild( childOld : Node, childNew : Node ) : Boolean = {
+    val search = children.find( _ == childOld )
+    if ( search.isDefined ) {
+      removeChild( childOld )
+      addChild( childNew )
+    }
+    search.isDefined
   }
   def getParents() : Seq[Node] = parents.toVector
   def getParentSet() : Set[Node] = parents.toSet
   def parentsIsEmpty() : Boolean = parents.isEmpty
-  def intersectPar( otherP : Set[Node] ) = { otherP.intersect( parents.toSet ) }
+  def intersectPar( otherP : Set[Node] ) = { otherP.intersect( getParentSet() ) }
   private def addParent( n : Node ) = {
-    assert( isLocked(), "Node should be locked to add parent" )
     parents += n
   }
   private def removeParent( n : Node ) = {
-    assert( isLocked(), "Node should be locked to remove parent" )
     assert( hasParent(n), "Trying to remove non parent " + n )
     parents -= n
   }
@@ -261,11 +293,7 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   /** Returns if cki = ( incr( c_(l,i-1%n) U c_(r,i-1%n) )
     */
   def testAddUnion( i : Int ) : Boolean = {
-    val childSets = children.map( child => {
-      if ( !child.isDefined )
-        return false
-      child.get.getModSet( i )
-    })
+    val childSets = children.toVector.map( child => child.getModSet( i ) )
     val allSet = incr( childSets.reduce( _ ++ _ ) )
     val thisSet = getCki( i )
     if ( childSets.map( _.size ).reduce( _ + _ ) != thisSet.size || allSet.size != thisSet.size )
@@ -276,16 +304,12 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   /** Returns if cki = incr( c_(l,i-1%n) ) or incr( c_(r,i-1%n) )
     */
   def testMux( i : Int ) : Boolean = {
-    if ( numChildren() != 2 )
+    if ( numChildren() != 1 && numChildren() != 2 )
       return false
-    val childSets = children.map( child => {
-      if ( !child.isDefined )
-        return false
-      child.get.getModSet( i )
+    val childSets = children.toVector.map( child => {
+      incr( child.getModSet( i ) )
     })
-    val leftSet = incr( childSets(0) )
-    val rightSet = incr( childSets(1) )
-    leftSet == getCki( i ) || rightSet == getCki( i )
+    childSets.find( _ == getCki( i ) ).isDefined
   }
 
   /** Returns if the union of all cki is size 1 and that set has a size of 1
@@ -299,12 +323,13 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
     uk.head.find( p => getP0( p ) == 0 ).isDefined
   }
 
-  private def getMuxSwitch() : Vector[Int] = {
-    assert( isB() && numChildren() == 2, "Must be mux to call muxSwitch" )
-    val lUk = getChild( 0 ).get.getUkNext()
-    val lCk = getChild( 0 ).get.getCkNext()
-    val rUk = getChild( 1 ).get.getUkNext()
-    val rCk = getChild( 1 ).get.getCkNext()
+  private def getMuxSwitch( childL : Node, childR : Node ) : Vector[Int] = {
+    assert( isMux(), "Must be mux to call muxSwitch" )
+
+    val lUk = childL.getUkNext()
+    val lCk = childL.getCkNext()
+    val rUk = childR.getUkNext()
+    val rCk = childR.getCkNext()
     ck.zip( lCk.zip( rCk ) ).map( cks => {
       // unnecessary to have both but better error checking
       val isL = ( cks._1 != -1 && cks._2._1 != -1 && lUk( cks._2._1 ) == uk( cks._1 ) )
@@ -337,10 +362,10 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
     assert( isA() || isB(), "Must set the C nodes before the others can be generated" )
     val updateVal = {
       if ( isA() )
-        children.map( child => child.get.genChisel() ).reduce( _ + _ )
+        children.map( child => child.genChisel() ).reduce( _ + _ )
       //else if ( numChildren() == 1 ) should be like this ...
-      else if ( numChildren() == 2 && getChild( 0 ) == getChild( 1 ) )
-        getChild( 0 ).get.genChisel()
+      else if ( isReg() )
+        getOnlyChild().genChisel()
       else {
         // otherwise mux ...
         val cntr = RegInit( UInt( 0, log2Up( nodeSize ) ) )
@@ -348,12 +373,13 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
         when ( cntr === UInt( ck.size - 1, log2Up( nodeSize ) ) ) {
           cntr := UInt( 0, log2Up( nodeSize ) )
         }
-        val muxSwitch = getMuxSwitch()
+        val childList = getChildren().toList
+        val muxSwitch = getMuxSwitch( childList(0), childList(1) )
         // TODO: use don't cares to simplify logic
         val rIdxs = muxSwitch.zipWithIndex.filter( mi => mi._1 == 1 ).map( _._2 )
         val rCond = treeReduce( rIdxs.map( ri => { cntr === UInt( ri, log2Up( nodeSize ) ) }) )
         muxBool = Some( rCond )
-        Mux( muxBool.get, getChild( 1 ).get.genChisel(), getChild( 0 ).get.genChisel() )
+        Mux( muxBool.get, childList(1).genChisel(), childList(0).genChisel() )
       }
     }
     val newReg = RegNext( updateVal )
