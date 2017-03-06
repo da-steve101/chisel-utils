@@ -255,7 +255,8 @@ object AnnealingSolver {
       if ( !alreadyLocked.contains( p ) && !nodesLocked.contains(p) ) {
         val lockRes = p.lockNode()
         if ( !lockRes ) {
-          nodesLocked.map( n => n.unlockNode() )
+          for ( n <- nodesLocked )
+            n.unlockNode()
           return (false, Set[Node]() )
         }
         nodesLocked += p
@@ -286,7 +287,8 @@ object AnnealingSolver {
       if ( !nodesLocked.contains( nC ) ) {
         val lockCRes = nC.lockNode()
         if ( !lockCRes ) {
-          nodesLocked.map( n => n.unlockNode() )
+          for ( n <- nodesLocked )
+            n.unlockNode()
           return (false, Set[Node]())
         }
         nodesLocked += nC
@@ -297,7 +299,8 @@ object AnnealingSolver {
       if ( !nodesLocked.contains(nIn) ) {
         val lock = nIn.lockNode()
         if ( !lock ) {
-          nodesLocked.map( n => n.unlockNode() )
+          for ( n <- nodesLocked )
+            n.unlockNode()
           return (false, Set[Node]())
         }
         nodesLocked += nIn
@@ -307,7 +310,8 @@ object AnnealingSolver {
     // lock parents of node, nodeL and nodeR
     val lockPar = lockNodes( node.getParentSet() ++ nodeChildren.map( _.getParentSet() ).reduce( _ ++ _ ), nodesLocked.toSet )
     if ( !lockPar._1 ) {
-      nodesLocked.map( n => n.unlockNode() )
+      for ( n <- nodesLocked )
+        n.unlockNode()
       return (false, Set[Node]())
     }
     nodesLocked ++= lockPar._2
@@ -412,7 +416,7 @@ object AnnealingSolver {
 
   /** Run in parallel
     */
-  def runPar( nodesIn : Set[Node], iter : Int, innerLoopSize : Int = 100000 ) : Set[Node] = {
+  def runPar( nodesIn : Set[Node], iter : Int, innerLoopSize : Int = 100000, safeMode : Boolean = false ) : Set[Node] = {
     val nodes = new NodeSet( nodesIn )
 
     val iterDub = iter.toDouble/innerLoopSize
@@ -431,6 +435,15 @@ object AnnealingSolver {
       val mergeCount = new java.util.concurrent.atomic.AtomicInteger()
       val splitCount = new java.util.concurrent.atomic.AtomicInteger()
       val swapCount = new java.util.concurrent.atomic.AtomicInteger()
+      if ( safeMode ) {
+        // do expensive checks
+        for ( n <- nodes ) {
+          for ( nc <- n.getChildren() ++ n.getParents() )
+            assert( nodes.contains( nc ) )
+          assert( !n.isLocked() )
+          assert( Node.verifyNode( n ) )
+        }
+      }
       println( "Start inner loop" )
       (  0 until innerLoopSize ).par.foreach( j => {
 
@@ -447,7 +460,8 @@ object AnnealingSolver {
 
           val chooseMerge = myTRand.nextInt( 0, 2 ) == 0
 
-          assert( node.getChildren().find( n => !lockRes._2.contains( n ) ).isDefined, "child nodes should be locked" )
+          val nonLocked = node.getChildren().find( n => !lockRes._2.contains( n ) )
+          assert( !nonLocked.isDefined, "child nodes should be locked: " + nonLocked )
 
           // perform a merge
           if ( chooseMerge && !node.parentsIsEmpty ) {
@@ -495,20 +509,34 @@ object AnnealingSolver {
                 }
               }
             } else { // else swap
+              val nodeChildren = node.getChildren()
+              if ( safeMode ) {
+                for ( n <- nodeChildren )
+                  assert( Node.isMinimal( n ), "node " + n + " should be minimal and has parents " + n.getParentSet() )
+                if ( !node.parentsIsEmpty )
+                  assert( Node.isMinimal( node ),
+                    "Node " + node + " should be minimal and has parents " + node.getParentSet() )
+              }
               val res = performSwap( node, applyIfIncrease )
               if ( res._1.size > 0 ) {
-                for ( n <- node.getChildren() ) {
+                val oldNodes = nodeChildren -- res._1
+                for ( n <- oldNodes ) {
                   assert( n.isLocked(), "Should be removing locked nodes" )
                   assert( lockRes._2.contains( n ), "Should hold locks" )
                   assert( n.parentsIsEmpty , "Should not be connected" )
                   nodes -= n
                 }
 
-                nodes ++= res._1.drop(1)
+                val newNodes = res._1.drop(1).toSet -- nodeChildren
+                nodes ++= newNodes
 
-                for( n <- res._1.filterNot( _.parentsIsEmpty ) )
+                for( n <- res._1.drop(1) )
                   assert( Node.isMinimal( n ), "node " + n + " should be minimal after swap " + res._2 + " has parents " + n.getParentSet() )
-                res._1.drop(1).map( n => n.unlockNode() ) // only unlock new nodes
+                if ( !node.parentsIsEmpty )
+                  assert( Node.isMinimal( node ),
+                    "Node " + node + " should be minimal after swap " + res._2 + " has parents " + node.getParentSet() )
+                for ( n <- newNodes )
+                  n.unlockNode() // only unlock new nodes
                 swapCount.incrementAndGet()
               }
             }
@@ -588,12 +616,14 @@ object AnnealingSolver {
   }
 
   private def nodeToStr( nodesVec : Seq[Node], n : Node ) : Seq[String] = {
-    n.getChildren().map( nc => nodesVec.indexOf( nc ).toString() ).toList
+    List(n.toString()) ++ n.getChildren().map( nc => nodesVec.indexOf( nc ).toString() ).toList
   }
 
   private def nodeFromStr( s : String ) : Node = {
     val typeReg = "[ABC]".r
-    val nodeType = typeReg.findFirstIn( s ).get
+    val typeSearch = typeReg.findFirstIn( s )
+    assert( typeSearch.isDefined, "Must be either type A, B or C" )
+    val nodeType = typeSearch.get
     val curlyReg = """((?<=\{)[^}]*)""".r
     val ukCk = curlyReg.findAllIn( s ).toList
     assert( ukCk.size == 2 )
@@ -615,6 +645,58 @@ object AnnealingSolver {
     n
   }
 
+  def binFilterToCp( convFilter : Seq[Seq[Seq[Seq[Int]]]], imgSize : (Int, Int), throughput : Int = 1 ) : Seq[Seq[Set[Seq[Int]]]] = {
+
+    val filterSize = ( convFilter(0)(0).size, convFilter(0)(0)(0).size, convFilter(0).size )
+
+    val cp = ( 0 until convFilter.size ).map( convIdx => { // for each filter
+      val imgOut = ( 0 until imgSize._2 ).map( y => { // for each column in the img
+        ( 0 until imgSize._1 ).map( x => { // for each row in that column
+          ( 0 until filterSize._1 ).map( px => {
+            ( 0 until filterSize._2 ).map( py => {
+              ( 0 until filterSize._3 ).map( d => {
+                val xpx = x + px - (filterSize._1/2)
+                val ypy = y + py - (filterSize._2/2)
+                ( xpx, ypy, px, py, d )
+              }).filter{ case ( xpx, ypy, px, py, d ) => { // filter out zeros and any edge parts
+                val isZero = ( convFilter( convIdx )(d)(py)(px) == 0 )
+                ( xpx >= 0 && xpx < imgSize._1 && ypy >= 0 && ypy < imgSize._2 && !isZero )
+              }}.map{ case ( xpx, ypy, px, py, d ) => {
+                val addIdx = if ( convFilter( convIdx )(d)(py)(px) == 1 ) 1 else 0
+                val cyc = ( ypy*imgSize._2 + xpx )/throughput
+                val pos = (2*d) + addIdx + 2*filterSize._3*( ( ypy*imgSize._2 + xpx ) % throughput )
+                Vector( cyc, pos )
+              }}.toSet
+            }).reduce( _ ++ _ ) // sum over filter cols
+          }).reduce( _ ++ _ ) // sum over filter rows
+        })
+      }).reduce( _ ++ _ ) // collect image into a list
+      imgOut.zipWithIndex.groupBy( _._2 % throughput ).toVector.sortBy( _._1 ).map( _._2 ).map( v => v.map( s => s._1 ) )
+    }).reduce( _ ++ _ ).filter( cList => cList.find( !_.isEmpty ).isDefined ) // collect all outputs
+
+    val cpCoords = cp.map( convFilt => {
+      convFilt.zipWithIndex.map( cSet => {
+        cSet._1.map( v => {Vector( cSet._2 - v(0)) ++ v.drop(1)}.to[Seq] )
+      }).toVector.to[Seq]
+    }).toVector.to[Seq]
+    val latAdd = AnnealingSolver.needLatency( cpCoords )
+    println( "latAdd = " + latAdd )
+    val cpFinal = cpCoords.map( convFilt => {
+      convFilt.map( cSet => {
+        cSet.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) }.to[Seq])
+      })
+    })
+    cpFinal
+  }
+
+  def readCsv( filename : String ) : Seq[Seq[Seq[Seq[Int]]]] = {
+    val reader = CSVReader.open(new File(filename))
+    val floatData = reader.all().map( x => x.map( _.toFloat.toInt ).to[Seq] )
+    reader.close()
+    // group into the convolutional filters
+    floatData.toVector.to[Seq].grouped(3).toVector.to[Seq].grouped(3).toVector.to[Seq]
+  }
+
   def save( nodes : Set[Node], filename : String ) : Boolean = {
     val writer = CSVWriter.open( new File( filename ) )
     val nodesVec = nodes.toVector
@@ -627,14 +709,12 @@ object AnnealingSolver {
   def load( filename : String ) : Set[Node] = {
     val reader = CSVReader.open( new File( filename ) )
     val nodeEntries = reader.iterator.map( ln => {
-      ( nodeFromStr( ln(0) ), ln(1).toInt, ln(2).toInt )
+      ( nodeFromStr( ln.head ), ln.tail.map( _.toInt ) )
     }).toVector
     reader.close
     for ( nodeConn <- nodeEntries ) {
-      if ( nodeConn._2 != -1 )
-        nodeConn._1.addChild( nodeEntries( nodeConn._2 )._1 )
-      if ( nodeConn._3 != -1 )
-        nodeConn._1.addChild( nodeEntries( nodeConn._3 )._1 )
+      for ( cIdx <- nodeConn._2 )
+        nodeConn._1.addChild( nodeEntries( cIdx )._1 )
     }
     nodeEntries.map( _._1 ).toSet
   }

@@ -10,61 +10,12 @@ import com.github.tototoshi.csv._
 import java.io.File
 import Chisel._
 
-
 class SumScheduleSuite extends TestSuite {
 
   val myRand = new Random
   val dim = 2
   val nodeSize = 20
   val maxVal = 10
-
-  class MyMod( val myNodes : Set[chiselutils.algorithms.Node], val outNodes : Seq[chiselutils.algorithms.Node] ) extends Module {
-    val inNodes = myNodes.filter( _.isC() ).toVector.sortBy( n => n.uk(0).toList(0)(1) ) // have to put in order
-    Predef.assert( inNodes.size == ( inNodes.last.uk(0).map( x => x(1) ).max + 1 ), "Should be correct number of inNodes" )
-    val io = new Bundle {
-      val in = Valid( Vec( inNodes.size, Fixed( INPUT, 16, 8 ) ) ).asInput
-      val out = Valid( Vec( outNodes.size, Fixed( OUTPUT, 16, 8 ) ) )
-    }
-    val nodeInputs = io.in.bits.zip( inNodes ).toSet
-    io.out.valid := AnnealingSolver.toChisel( myNodes, nodeInputs, io.in.valid )
-    for ( n <- outNodes.zipWithIndex )
-      io.out.bits(n._2) := n._1.getChisel().get
-  }
-
-  class MyModTests( c : MyMod ) extends Tester( c ) {
-    val numIn = c.io.in.bits.size
-    val numOut = c.io.out.bits.size
-    val latency = c.myNodes.map( n => Node.latency( n ) ).max
-    val cycs = c.myNodes.iterator.next.ck.size * 2
-    val testInputs = ( 0 until cycs ).toSeq.map( c =>
-      ( 0 until numIn ).toSeq.map( ni => BigInt( myRand.nextInt( maxVal ) ) )
-    )
-    poke( c.io.in.valid, true )
-    for ( cyc <- 0 until cycs ) {
-      for ( i <- 0 until numIn )
-        poke( c.io.in.bits( i ), testInputs( cyc )( i ) )
-      val validOut = peek( c.io.out.valid ) == 1
-      peek( c.io.out )
-      for ( n <- c.myNodes )
-        peek( n.getChisel().get )
-      if ( validOut ) {
-        for ( n <- c.outNodes.zipWithIndex ) {
-          val node = n._1
-          val currCyc = ( cyc - 1 ) % node.ck.size
-          val currOut = node.ck( currCyc )
-          if ( currOut != -1 ) {
-            val uki = node.uk( currOut )
-            val rdy = uki.map( num => cyc - num( 0 ) >= 0 ).reduce( _ && _ )
-            if ( rdy ) {
-              val outNums = uki.toVector.map( num => testInputs( cyc - num( 0 ) )( num( 1 ) ) )
-              expect( c.io.out.bits( n._2 ), outNums.sum )
-            }
-          }
-        }
-      }
-      step( 1 )
-    }
-  }
 
   def genUk( noUk : Int, setSize : Int ) : Seq[Set[Seq[Int]]] = {
     Vector.fill( noUk ) { Vector.fill( setSize ) { Vector.fill( dim ) { myRand.nextInt( maxVal ) + 1 }.to[Seq]}.to[Set] }
@@ -84,65 +35,6 @@ class SumScheduleSuite extends TestSuite {
 
   def incr( uk : Seq[Set[Seq[Int]]] ) : Seq[Set[Seq[Int]]] = {
     uk.map( s => s.map( v => { Vector( v(0) + 1 ) ++ v.drop(1) }.to[Seq]))
-  }
-
-  def testLinks( nodes : Set[Node] ) : Boolean = {
-    for ( n <- nodes ) {
-      for ( c <- n.getChildren() ) {
-        if ( !nodes.contains( c ) ) {
-          println( c + " not in nodes" )
-          return false
-        }
-        if ( !c.getParents().contains( n ) ) {
-          println( "Parents doesn't have :" + n  )
-          return false
-        }
-        for ( p <- c.getParents() ) {
-          if ( !nodes.contains( p ) ) {
-            println( "Parent node not in nodes:" + p )
-            return false
-          }
-        }
-      }
-    }
-    true
-  }
-
-  def getConvSums( imgSize : Int, filterSize : Int ) : List[Set[Vector[Int]]] = {
-    // no padding, 1 filter
-    // stream pixel by pixel
-    // only odd filter
-    // need to flip
-    // input is 3 by 3 => positions 0 to 8
-    // columns are x, rows are y
-    val positions = ( 0 until filterSize*filterSize )
-    val outSums = ( 0 until imgSize ).map( y => {
-      ( 0 until imgSize ).map( x => {
-        positions.map( p => {
-          val px = ( p % filterSize ) - ( filterSize / 2 )
-          val py = ( p / filterSize ) - ( filterSize / 2 )
-          val xpx = x + px
-          val ypy = y + py
-          ( xpx, ypy, p )
-        }).filter { case ( xpx, ypy, p ) => {
-          ( xpx >= 0 && xpx < imgSize && ypy >= 0 && ypy < imgSize )
-        }}.map { case ( xpx, ypy, p ) => {
-          Vector( ypy*imgSize + xpx, p )
-        }}.toSet
-      })
-    }).reduce( _ ++ _ ).toList
-    outSums
-  }
-
-  def verifyHardware( nodes : Set[Node], outNodes : Seq[Node] ) {
-    assert( testLinks( nodes ) )
-    chiselMainTest( Array("--genHarness", "--compile", "--test", "--vcd", "--backend", "c"),
-      () => Module( new MyMod( nodes, outNodes ) ) ) { c => new MyModTests( c ) }
-  }
-
-  def generateHardware( nodes : Set[Node], outNodes : Seq[Node] ) {
-    testLinks( nodes )
-    chiselMain( Array("--genHarness", "--backend", "v"), () => Module( new MyMod( nodes, outNodes ) ) )
   }
 
   /** Test the sum constraint
@@ -243,11 +135,12 @@ class SumScheduleSuite extends TestSuite {
 
     val nodeList = Transforms.trySwap( nodePar )._1
 
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
-    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isB() )
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd2() )
+    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isReg() )
+    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isReg() )
 
-    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
   }
 
   @Test def testSwap2 {
@@ -277,11 +170,12 @@ class SumScheduleSuite extends TestSuite {
 
     val nodeList = Transforms.trySwap( nodePar )._1
 
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
-    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isB() )
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
+    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isReg() )
+    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isReg() )
 
-    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
   }
 
   @Test def testSwap4 {
@@ -322,10 +216,11 @@ class SumScheduleSuite extends TestSuite {
 
     val nodeList = Transforms.trySwap( nodePar )._1
 
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isA() )
+    assert( nodeList.size == 2 )
+    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isReg() )
+    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd3() )
 
-    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
   }
 
   @Test def testSwap4B {
@@ -371,11 +266,12 @@ class SumScheduleSuite extends TestSuite {
 
     val nodeList = Transforms.trySwap( nodePar )._1
 
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isA() )
-    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isA() )
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd2() )
+    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd2() )
+    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd2() )
 
-    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
   }
 
   @Test def testSwap5 {
@@ -431,12 +327,12 @@ class SumScheduleSuite extends TestSuite {
       assert( nodeList.tail.map( _.numChildren() ).sum == numInputs )
       for ( n <- nodeList.tail ) {
         if ( n.numChildren() > 1 )
-          assert( Node.satisfiesConstraintA( n ) && n.isA() )
+          assert( Node.satisfiesConstraintA( n ) && n.isAdd() )
         else
-          assert( Node.satisfiesConstraintB( n ) && n.isB() )
+          assert( Node.satisfiesConstraintB( n ) && n.isReg() )
       }
 
-      verifyHardware( nodeList.toSet ++ nodesIn.toSet, List( nodeList(0) ) )
+      VerifyHardware( nodeList.toSet ++ nodesIn.toSet, List( nodeList(0) ) )
     }
   }
 
@@ -472,26 +368,28 @@ class SumScheduleSuite extends TestSuite {
 
     val nodeList = Transforms.trySwap( nodePar )._1
 
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isA() )
+    assert( nodeList.size == 2 )
+    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isReg() )
+    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd2() )
 
-    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
   }
 
   @Test def testSwap7 {
     val nodeAuK = genTermUk( 0 ) // termination setA
     val nodeBuK = genTermUk( 1 ) // termination setB
     val nodeCuK = genTermUk( 2 ) // termination setC
-    val node_cK = genCk( 1 )
-    val nodeA = Node( nodeAuK, node_cK )
-    val nodeB = Node( nodeBuK, node_cK )
-    val nodeC = Node( nodeCuK, node_cK )
+    val node_cK = genCk( 2 )
+    val node_cK1 = node_cK.drop(1) ++ node_cK.take(1)
+    val nodeA = Node( nodeAuK, node_cK1.map( x => if ( x == -1 ) -1 else 0 ) )
+    val nodeB = Node( nodeBuK, node_cK1.map( x => if ( x == 0 ) 0 else -1 ) )
+    val nodeC = Node( nodeCuK, node_cK1.map( x => if ( x == 1 ) 0 else -1 ) )
     nodeA.setC()
     nodeB.setC()
     nodeC.setC()
     val nodeOtherUk = nodeB.getUkNext() ++ nodeC.getUkNext()
     val nodeSwap = Node( nodeA.getUkNext(), nodeA.getCkNext() )
-    val nodeOther = Node( nodeOtherUk, nodeB.getCkNext().map( x => if ( x == -1 ) -1 else myRand.nextInt(2) ))
+    val nodeOther = Node( nodeOtherUk, node_cK)
     nodeSwap.setB()
     nodeOther.setB()
     nodeSwap.addChild( nodeA )
@@ -514,16 +412,59 @@ class SumScheduleSuite extends TestSuite {
 
     val nodeList = Transforms.trySwap( nodePar )._1
 
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isA() )
-    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isA() )
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
+    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd2() )
+    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd2() )
 
-    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
 
   }
 
   @Test def testSwap9 {
-    assert( false )
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val nodeCuK = genTermUk( 2 ) // termination setC
+    val nodeDuK = genTermUk( 3 ) // termination setD
+    val node_cK = genCk( 2 )
+    val add_cK = node_cK.map( x => if (x == -1 ) -1 else 0 )
+    val nodeA = Node( nodeAuK, add_cK )
+    val nodeB = Node( nodeBuK, add_cK )
+    val nodeC = Node( nodeCuK, node_cK.map( x => if ( x == 0 ) 0 else -1 ) )
+    val nodeD = Node( nodeDuK, node_cK.map( x => if ( x == 1 ) 0 else -1 ) )
+    nodeA.setC()
+    nodeB.setC()
+    nodeC.setC()
+    nodeD.setC()
+    val nAdd = Node( Vector( nodeA.getUkNext().head ++ nodeB.getUkNext().head ), nodeA.getCkNext() )
+    val nMux = Node( nodeC.getUkNext() ++ nodeD.getUkNext(), node_cK.takeRight(1) ++ node_cK.dropRight(1) )
+    val nPar = Node( nMux.getUkNext().map( uki => uki ++ nAdd.getUkNext().head ), nMux.getCkNext() )
+    nAdd.setA()
+    nMux.setB()
+    nPar.setA()
+    nAdd.addChild( nodeA )
+    nAdd.addChild( nodeB )
+    nMux.addChild( nodeC )
+    nMux.addChild( nodeD )
+    nPar.addChild( nAdd )
+    nPar.addChild( nMux )
+
+    assert( Node.satisfiesConstraintC( nodeA ) )
+    assert( Node.satisfiesConstraintC( nodeB ) )
+    assert( Node.satisfiesConstraintC( nodeC ) )
+    assert( Node.satisfiesConstraintC( nodeD ) )
+    assert( Node.satisfiesConstraintA( nAdd ) )
+    assert( Node.satisfiesConstraintB( nMux ) )
+    assert( Node.satisfiesConstraintA( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
+    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd3() )
+    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd3() )
+
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
   }
 
   @Test def testSwap10 {
@@ -558,10 +499,11 @@ class SumScheduleSuite extends TestSuite {
 
     val nodeList = Transforms.trySwap( nodePar )._1
 
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
+    assert( nodeList.size == 2 )
+    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isReg() )
+    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isMux() )
 
-    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
   }
 
   @Test def testSwap11 {
@@ -600,15 +542,58 @@ class SumScheduleSuite extends TestSuite {
 
     val nodeList = Transforms.trySwap( nodePar )._1
 
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
-    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isB() )
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd2() )
+    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isReg() )
+    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isMux() )
 
-    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
   }
 
   @Test def testSwap11B {
-    assert( false )
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val nodeCuK = genTermUk( 2 ) // termination setC
+    val nodeDuK = genTermUk( 3 ) // termination setD
+    val node_cK = genCk( 2 )
+    val nodeA_cK = node_cK.map( x => if ( x == 0 ) 0 else -1 )
+    val nodeBC_cK = node_cK.map( x => if ( x == -1 ) -1 else 0 )
+    val nodeD_cK = node_cK.map( x => if ( x == 1 ) 0 else -1 )
+    val nodeA = Node( nodeAuK, nodeA_cK )
+    val nodeB = Node( nodeBuK, nodeBC_cK )
+    val nodeC = Node( nodeCuK, nodeBC_cK )
+    val nodeD = Node( nodeDuK, nodeD_cK )
+    nodeA.setC()
+    nodeB.setC()
+    nodeC.setC()
+    nodeD.setC()
+    val nAdd1 = Node( Vector( nodeA.getUkNext().head ++ nodeB.getUkNext().head ++ nodeC.getUkNext().head ), nodeA.getCkNext() )
+    val nAdd2 = Node( Vector( nodeD.getUkNext().head ++ nodeB.getUkNext().head ++ nodeC.getUkNext().head ), nodeD.getCkNext() )
+    val nPar = Node( nAdd1.getUkNext() ++ nAdd2.getUkNext(), node_cK.takeRight(2) ++ node_cK.dropRight(2) )
+    nAdd1.addChildren( Set( nodeA, nodeB, nodeC ) )
+    nAdd2.addChildren( Set( nodeB, nodeC, nodeD ) )
+    nPar.addChildren( Set( nAdd1, nAdd2 ) )
+    nPar.setB()
+    nAdd1.setA()
+    nAdd2.setA()
+
+    assert( Node.satisfiesConstraintC( nodeA ) )
+    assert( Node.satisfiesConstraintC( nodeB ) )
+    assert( Node.satisfiesConstraintC( nodeC ) )
+    assert( Node.satisfiesConstraintC( nodeD ) )
+    assert( Node.satisfiesConstraintA( nAdd1 ) )
+    assert( Node.satisfiesConstraintA( nAdd2 ) )
+    assert( Node.satisfiesConstraintB( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 4 )
+    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd3() )
+    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isMux() )
+    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isReg() )
+    assert( Node.satisfiesConstraintB( nodeList(3) ) && nodeList(3).isReg() )
+
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
   }
 
   @Test def testSwap12 {
@@ -652,21 +637,90 @@ class SumScheduleSuite extends TestSuite {
 
     val nodeList = Transforms.trySwap( nodePar )._1
 
-    println( "test12: " + nodeList )
-    println( nodeList(0).getChildren() )
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
-    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isB() )
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
+    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isMux() )
+    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isMux() )
 
-    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
   }
 
   @Test def testSwap12B {
-    assert( false )
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val nodeCuK = genTermUk( 2 ) // termination setC
+    val node_cK = genCk( 3 )
+    val node_cK1 = node_cK.takeRight(1) ++ node_cK.dropRight(1)
+    val node_cK2 = node_cK1.takeRight(1) ++ node_cK1.dropRight(1)
+    val nodeA = Node( nodeAuK, node_cK.map( x => if ( x == 0 ) 0 else -1 ) )
+    val nodeB = Node( nodeBuK, node_cK.map( x => if ( x == 1 ) 0 else -1 ) )
+    val nodeC = Node( nodeCuK, node_cK.map( x => if ( x == 2 ) 0 else -1 ) )
+    nodeA.setC()
+    nodeB.setC()
+    nodeC.setC()
+    val nMux1 = Node( nodeA.getUkNext() ++ nodeB.getUkNext(), node_cK1.map( x => if ( x == 2 ) -1 else x ) )
+    val nMux2 = Node( nodeB.getUkNext() ++ nodeC.getUkNext(), node_cK1.map( x => if ( x < 1 ) -1 else x - 1 ) )
+    val nPar = Node( nMux1.getUkNext() ++ Vector( nMux2.getUkNext()(1) ), node_cK2 )
+    nMux1.addChildren( Set( nodeA, nodeB ) )
+    nMux2.addChildren( Set( nodeB, nodeC ) )
+    nPar.addChildren( Set( nMux1, nMux2 ) )
+    nMux1.setB()
+    nMux2.setB()
+    nPar.setB()
+
+    assert( Node.satisfiesConstraintC( nodeA ) )
+    assert( Node.satisfiesConstraintC( nodeB ) )
+    assert( Node.satisfiesConstraintC( nodeC ) )
+    assert( Node.satisfiesConstraintB( nMux1 ) )
+    assert( Node.satisfiesConstraintB( nMux2 ) )
+    assert( Node.satisfiesConstraintB( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
+    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isMux() )
+    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isReg() )
+
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
   }
 
   @Test def testSwap12C {
-    assert( false )
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val node_cK = genCk( 2 )
+    val node_cK1 = node_cK.takeRight(1) ++ node_cK.dropRight(1)
+    val nodeA = Node( nodeAuK, node_cK.map( x => if ( x == 0 ) 0 else -1 ) )
+    val nodeB = Node( nodeBuK, node_cK.map( x => if ( x == 1 ) 0 else -1 ) )
+    nodeA.setC()
+    nodeB.setC()
+    val nMux1 = Node( nodeA.getUkNext() ++ nodeB.getUkNext(), node_cK1 )
+    val nMux2 = Node( nodeA.getUkNext() ++ nodeB.getUkNext(), node_cK1 )
+    val nPar = Node( nMux1.getUkNext(), nMux1.getCkNext() )
+    nMux1.setB()
+    nMux2.setB()
+    nPar.setB()
+    nMux1.addChild( nodeA )
+    nMux1.addChild( nodeB )
+    nMux2.addChild( nodeA )
+    nMux2.addChild( nodeB )
+    nPar.addChild( nMux1 )
+    nPar.addChild( nMux2 )
+
+    assert( Node.satisfiesConstraintC( nodeA ) )
+    assert( Node.satisfiesConstraintC( nodeB ) )
+    assert( Node.satisfiesConstraintB( nMux1 ) )
+    assert( Node.satisfiesConstraintB( nMux2 ) )
+    assert( Node.satisfiesConstraintB( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
+    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isReg() )
+    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isReg() )
+
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
   }
 
   @Test def testSwap13 {
@@ -714,154 +768,374 @@ class SumScheduleSuite extends TestSuite {
 
     val nodeList = Transforms.trySwap( nodePar )._1
 
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isB() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isB() )
-    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isB() )
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
+    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isMux() )
+    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isReg() )
 
-    verifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
   }
 
   @Test def testSwap16 {
-    assert( false )
+    val nodeAuK = genTermUk( 0 ) // termination setA
+    val nodeBuK = genTermUk( 1 ) // termination setB
+    val nodeCuK = genTermUk( 2 ) // termination setC
+    val nodeDuK = genTermUk( 3 ) // termination setD
+    val node_cK = genCk( 2 )
+    val node_cK1 = node_cK.drop(1) ++ node_cK.take(1)
+    val nodeA = Node( nodeAuK, node_cK1.map( x => if ( x == -1 ) -1 else 0 ) )
+    val nodeB = Node( nodeBuK, node_cK1.map( x => if ( x == -1 ) -1 else 0 ) )
+    val nodeC = Node( nodeCuK, node_cK1.map( x => if ( x == 0 ) 0 else -1 ) )
+    val nodeD = Node( nodeDuK, node_cK1.map( x => if ( x == 1 ) 0 else -1 ) )
+    nodeA.setC()
+    nodeB.setC()
+    nodeC.setC()
+    nodeD.setC()
+    val nReg1 = Node( nodeA.getUkNext(), nodeA.getCkNext() )
+    val nReg2 = Node( nodeB.getUkNext(), nodeB.getCkNext() )
+    val nMux = Node( nodeC.getUkNext() ++ nodeD.getUkNext(), node_cK )
+    nReg1.addChild( nodeA )
+    nReg2.addChild( nodeB )
+    nMux.addChild( nodeC )
+    nMux.addChild( nodeD )
+    nReg1.setB()
+    nReg2.setB()
+    nMux.setB()
+    val nPar = Node( nMux.getUkNext().map( uki => uki ++ nReg1.getUkNext().head ++ nReg2.getUkNext().head ), nMux.getCkNext() )
+    nPar.setA()
+    nPar.addChild( nMux )
+    nPar.addChild( nReg1 )
+    nPar.addChild( nReg2 )
+
+    assert( Node.satisfiesConstraintC( nodeA ) )
+    assert( Node.satisfiesConstraintC( nodeB ) )
+    assert( Node.satisfiesConstraintC( nodeC ) )
+    assert( Node.satisfiesConstraintC( nodeD ) )
+    assert( Node.satisfiesConstraintB( nReg1 ) )
+    assert( Node.satisfiesConstraintB( nReg2 ) )
+    assert( Node.satisfiesConstraintB( nMux ) )
+    assert( Node.satisfiesConstraintA( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
+    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd3() )
+    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd3() )
+
+    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
   }
 
   @Test def testSwap18 {
-    assert( false )
+    val nodesInUk = ( 0 until 5 ).map( i => genTermUk( i ) ).toList
+    val node_cK = genCk( 2 )
+    val node_cK1 = node_cK.drop(1) ++ node_cK.take(1)
+    val nodesABC = nodesInUk.take(3).map( uk => {
+      val n = Node( uk, node_cK1.map( x => if ( x == -1 ) -1 else 0 ) )
+      n.setC()
+      n
+    })
+    val nodesDE = nodesInUk.drop(3).zipWithIndex.map( uk => {
+      val n = Node( uk._1, node_cK1.map( x => if ( x == uk._2 ) 0 else -1 ) )
+      n.setC()
+      n
+    })
+    val nMux = Node( nodesDE.map( _.getUkNext() ).reduce( _++_ ), node_cK )
+    nMux.addChildren( nodesDE )
+    nMux.setB()
+    val nReg = Node( nodesABC(0).getUkNext(), nodesABC(0).getCkNext() )
+    nReg.addChild( nodesABC(0) )
+    nReg.setB()
+    val nAdd = Node( Vector( nodesABC.drop(1).map( _.getUkNext().head ).reduce( _ ++ _ ) ),
+      nodesABC(1).getCkNext() )
+    nAdd.addChildren( nodesABC.drop(1) )
+    nAdd.setA()
+    val nPar = Node( nMux.getUkNext().map( uk => uk ++ nAdd.getUkNext().head ++ nReg.getUkNext().head ),
+      nMux.getCkNext() )
+    nPar.addChildren( Set( nMux, nReg, nAdd ) )
+    nPar.setA()
+
+    for ( n <- nodesABC ++ nodesDE )
+      assert( Node.satisfiesConstraintC( n ) )
+    assert( Node.satisfiesConstraintB( nReg ) )
+    assert( Node.satisfiesConstraintA( nAdd ) )
+    assert( Node.satisfiesConstraintB( nMux ) )
+    assert( Node.satisfiesConstraintA( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd2() )
+    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd3() )
+    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isMux() )
+
+    VerifyHardware( nodeList.toSet ++ nodesABC.toSet ++ nodesDE.toSet, List( nodeList(0) ) )
+  }
+
+  @Test def testSwap18B {
+    val nodesInUk = ( 0 until 6 ).map( i => genTermUk( i ) ).toList
+    val node_cK = genCk( 2 )
+    val node_cK1 = node_cK.drop(1) ++ node_cK.take(1)
+    val nodesABCD = nodesInUk.take(4).map( uk => {
+      val n = Node( uk, node_cK1.map( x => if ( x == -1 ) -1 else 0 ) )
+      n.setC()
+      n
+    })
+    val nodesEF = nodesInUk.drop(4).zipWithIndex.map( uk => {
+      val n = Node( uk._1, node_cK1.map( x => if ( x == uk._2 ) 0 else -1 ) )
+      n.setC()
+      n
+    })
+    val nMux = Node( nodesEF.map( _.getUkNext() ).reduce( _++_ ), node_cK )
+    nMux.addChildren( nodesEF )
+    nMux.setB()
+    val nReg = Node( nodesABCD(0).getUkNext(), nodesABCD(0).getCkNext() )
+    nReg.addChild( nodesABCD(0) )
+    nReg.setB()
+    val nAdd = Node( Vector( nodesABCD.drop(1).map( _.getUkNext().head ).reduce( _ ++ _ ) ),
+      nodesABCD(1).getCkNext() )
+    nAdd.addChildren( nodesABCD.drop(1) )
+    nAdd.setA()
+    val nPar = Node( nMux.getUkNext().map( uk => uk ++ nAdd.getUkNext().head ++ nReg.getUkNext().head ),
+      nMux.getCkNext() )
+    nPar.addChildren( Set( nMux, nReg, nAdd ) )
+    nPar.setA()
+
+    for ( n <- nodesABCD ++ nodesEF )
+      assert( Node.satisfiesConstraintC( n ) )
+    assert( Node.satisfiesConstraintB( nReg ) )
+    assert( Node.satisfiesConstraintA( nAdd ) )
+    assert( Node.satisfiesConstraintB( nMux ) )
+    assert( Node.satisfiesConstraintA( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 4 )
+    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd3() )
+    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd2() )
+    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd2() )
+    assert( Node.satisfiesConstraintB( nodeList(3) ) && nodeList(3).isMux() )
+
+    VerifyHardware( nodeList.toSet ++ nodesABCD.toSet ++ nodesEF.toSet, List( nodeList(0) ) )
   }
 
   @Test def testSwap19 {
-    assert( false )
+    val nodesInUk = ( 0 until 7 ).map( i => genTermUk( i ) ).toList
+    val node_cK = genCk( 2 )
+    val node_cK1 = node_cK.drop(1) ++ node_cK.take(1)
+    val nodesAdds = nodesInUk.take(5).map( uk => {
+      val n = Node( uk, node_cK1.map( x => if ( x == -1 ) -1 else 0 ) )
+      n.setC()
+      n
+    })
+    val nodesMux = nodesInUk.drop(5).zipWithIndex.map( uk => {
+      val n = Node( uk._1, node_cK1.map( x => if ( x == uk._2 ) 0 else -1 ) )
+      n.setC()
+      n
+    })
+    val nMux = Node( nodesMux.map( _.getUkNext() ).reduce( _++_ ), node_cK )
+    nMux.addChildren( nodesMux )
+    nMux.setB()
+    val nAdd1 = Node( Vector( nodesAdds.take(3).map( _.getUkNext().head ).reduce( _ ++ _ ) ),
+      nodesAdds(0).getCkNext() )
+    nAdd1.addChildren( nodesAdds.take(3) )
+    nAdd1.setA()
+    val nAdd2 = Node( Vector( nodesAdds.drop(3).map( _.getUkNext().head ).reduce( _ ++ _ ) ),
+      nodesAdds(3).getCkNext() )
+    nAdd2.addChildren( nodesAdds.drop(3) )
+    nAdd2.setA()
+    val nPar = Node( nMux.getUkNext().map( uk => uk ++ nAdd1.getUkNext().head ++ nAdd2.getUkNext().head ),
+      nMux.getCkNext() )
+    nPar.addChildren( Set( nMux, nAdd1, nAdd2 ) )
+    nPar.setA()
+
+    for ( n <- nodesAdds ++ nodesMux )
+      assert( Node.satisfiesConstraintC( n ) )
+    assert( Node.satisfiesConstraintA( nAdd2 ) )
+    assert( Node.satisfiesConstraintA( nAdd1 ) )
+    assert( Node.satisfiesConstraintB( nMux ) )
+    assert( Node.satisfiesConstraintA( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 4 )
+    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd3() )
+    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isMux() )
+    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd3() )
+    assert( Node.satisfiesConstraintA( nodeList(3) ) && nodeList(3).isAdd2() )
+
+    VerifyHardware( nodeList.toSet ++ nodesAdds.toSet ++ nodesMux.toSet, List( nodeList(0) ) )
+  }
+
+  @Test def testSwap19B {
+    val nodesInUk = ( 0 until 6 ).map( i => genTermUk( i ) ).toList
+    val node_cK = genCk( 2 )
+    val node_cK1 = node_cK.drop(1) ++ node_cK.take(1)
+    val nodesAdds = nodesInUk.take(4).map( uk => {
+      val n = Node( uk, node_cK1.map( x => if ( x == -1 ) -1 else 0 ) )
+      n.setC()
+      n
+    })
+    val nodesMux = nodesInUk.drop(4).zipWithIndex.map( uk => {
+      val n = Node( uk._1, node_cK1.map( x => if ( x == uk._2 ) 0 else -1 ) )
+      n.setC()
+      n
+    })
+    val nMux = Node( nodesMux.map( _.getUkNext() ).reduce( _++_ ), node_cK )
+    nMux.addChildren( nodesMux )
+    nMux.setB()
+    val nAdd1 = Node( Vector( nodesAdds.take(2).map( _.getUkNext().head ).reduce( _ ++ _ ) ),
+      nodesAdds(0).getCkNext() )
+    nAdd1.addChildren( nodesAdds.take(2) )
+    nAdd1.setA()
+    val nAdd2 = Node( Vector( nodesAdds.drop(2).map( _.getUkNext().head ).reduce( _ ++ _ ) ),
+      nodesAdds(3).getCkNext() )
+    nAdd2.addChildren( nodesAdds.drop(2) )
+    nAdd2.setA()
+    val nPar = Node( nMux.getUkNext().map( uk => uk ++ nAdd1.getUkNext().head ++ nAdd2.getUkNext().head ),
+      nMux.getCkNext() )
+    nPar.addChildren( Set( nMux, nAdd1, nAdd2 ) )
+    nPar.setA()
+
+    for ( n <- nodesAdds ++ nodesMux )
+      assert( Node.satisfiesConstraintC( n ) )
+    assert( Node.satisfiesConstraintA( nAdd2 ) )
+    assert( Node.satisfiesConstraintA( nAdd1 ) )
+    assert( Node.satisfiesConstraintB( nMux ) )
+    assert( Node.satisfiesConstraintA( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 4 )
+    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd3() )
+    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isMux() )
+    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isReg() )
+    assert( Node.satisfiesConstraintA( nodeList(3) ) && nodeList(3).isAdd3() )
+
+    VerifyHardware( nodeList.toSet ++ nodesAdds.toSet ++ nodesMux.toSet, List( nodeList(0) ) )
   }
 
   @Test def testSwap20 {
-    assert( false )
+    val nodesInUk = ( 0 until 6 ).map( i => genTermUk( i ) ).toList
+    val node_cK = genCk( 1 )
+    val nodesIn = nodesInUk.map( uk => {
+      val n = Node( uk, node_cK )
+      n.setC()
+      n
+    })
+    val nReg = Node( nodesIn.head.getUkNext(), nodesIn.head.getCkNext() )
+    nReg.addChild( nodesIn.head )
+    nReg.setB()
+    val nAdd1 = Node( Vector( nodesIn.tail.take(2).map( _.getUkNext().head ).reduce( _ ++ _ ) ),
+      nodesIn.tail(0).getCkNext() )
+    nAdd1.addChildren( nodesIn.tail.take(2) )
+    nAdd1.setA()
+    val nAdd2 = Node( Vector( nodesIn.tail.drop(2).map( _.getUkNext().head ).reduce( _ ++ _ ) ),
+      nodesIn.tail(3).getCkNext() )
+    nAdd2.addChildren( nodesIn.tail.drop(2) )
+    nAdd2.setA()
+    val nPar = Node( Vector( nReg.getUkNext().head ++ nAdd1.getUkNext().head ++ nAdd2.getUkNext().head ),
+      nReg.getCkNext() )
+    nPar.addChildren( Set( nReg, nAdd1, nAdd2 ) )
+    nPar.setA()
+
+    for ( n <- nodesIn )
+      assert( Node.satisfiesConstraintC( n ) )
+    assert( Node.satisfiesConstraintA( nAdd2 ) )
+    assert( Node.satisfiesConstraintA( nAdd1 ) )
+    assert( Node.satisfiesConstraintB( nReg ) )
+    assert( Node.satisfiesConstraintA( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd2() )
+    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd3() )
+    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd3() )
+
+    VerifyHardware( nodeList.toSet ++ nodesIn.toSet, List( nodeList(0) ) )
+  }
+
+  @Test def testSwap20B {
+    val nodesInUk = ( 0 until 7 ).map( i => genTermUk( i ) ).toList
+    val node_cK = genCk( 1 )
+    val nodesIn = nodesInUk.map( uk => {
+      val n = Node( uk, node_cK )
+      n.setC()
+      n
+    })
+    val nReg = Node( nodesIn.head.getUkNext(), nodesIn.head.getCkNext() )
+    nReg.addChild( nodesIn.head )
+    nReg.setB()
+    val nAdd1 = Node( Vector( nodesIn.tail.take(3).map( _.getUkNext().head ).reduce( _ ++ _ ) ),
+      nodesIn.tail(0).getCkNext() )
+    nAdd1.addChildren( nodesIn.tail.take(3) )
+    nAdd1.setA()
+    val nAdd2 = Node( Vector( nodesIn.tail.drop(3).map( _.getUkNext().head ).reduce( _ ++ _ ) ),
+      nodesIn.tail(3).getCkNext() )
+    nAdd2.addChildren( nodesIn.tail.drop(3) )
+    nAdd2.setA()
+    val nPar = Node( Vector( nReg.getUkNext().head ++ nAdd1.getUkNext().head ++ nAdd2.getUkNext().head ),
+      nReg.getCkNext() )
+    nPar.addChildren( Set( nReg, nAdd1, nAdd2 ) )
+    nPar.setA()
+
+    for ( n <- nodesIn )
+      assert( Node.satisfiesConstraintC( n ) )
+    assert( Node.satisfiesConstraintA( nAdd2 ) )
+    assert( Node.satisfiesConstraintA( nAdd1 ) )
+    assert( Node.satisfiesConstraintB( nReg ) )
+    assert( Node.satisfiesConstraintA( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 4 )
+    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd3() )
+    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd2() )
+    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd2() )
+    assert( Node.satisfiesConstraintA( nodeList(3) ) && nodeList(3).isAdd3() )
+
+    VerifyHardware( nodeList.toSet ++ nodesIn.toSet, List( nodeList(0) ) )
   }
 
   @Test def testSwap21 {
-    assert( false )
-  }
-
-  /* commented out as locking assertions fail for serial method
-  @Test def simpleGraph {
-    val cp = List(
-      Set( Vector( 5, 0 ), Vector( 4, 1 ) ),
-      Set( Vector( 5, 0 ), Vector( 4, 1 ), Vector( 3, 2 ) ),
-      Set( Vector( 4, 1 ), Vector( 3, 2 ) )
-    )
-    var nodes = AnnealingSolver.init( List( cp ) )._1
-    for ( i <- 0 until 100 ) {
-      assert( testLinks( nodes ), "Node collection should be valid" )
-      val dotFile = "nodeMap" + (i/10) + ".dot"
-      println( "writing to " + "nodeMap" + (i/10) + ".dot")
-      AnnealingSolver.toDot( nodes, dotFile )
-
-      // verify all nodes
-      for ( n <- nodes ) {
-        val valid = Node.satisfiesConstraints(n)
-        val lValid = { if ( n.getChild( 0 ).isDefined ) n.getChild( 0 ).get.hasParent(n) else true }
-        val rValid = { if ( n.getChild( 1 ).isDefined ) n.getChild( 1 ).get.hasParent(n) else true }
-        if ( !valid || !lValid || !rValid ) {
-          println( "Node = " + n )
-          println( "Node.getChild( 0 ) = " + n.getChild( 0 ) )
-          println( "Node.getChild( 1 ) = " + n.getChild( 1 ) )
-          if ( n.getChild( 0 ).isDefined )
-            println( "Node.getChild( 0 ).parents = " + n.getChild( 0 ).get.getParents() )
-          if ( n.getChild( 1 ).isDefined )
-            println( "Node.getChild( 1 ).parents = " + n.getChild( 1 ).get.getParents() )
-        }
-        assert( valid && lValid && rValid, "Node " + n + " did not satisfy constraints" )
-      }
-
-      // overwrite each cycle to catch changes
-      val applyIfIncrease = Random.nextDouble >= i.toDouble/100 
-      nodes = AnnealingSolver.applyOperation( nodes, applyIfIncrease )
-    }
-  }
-
-  @Test def conv3n5 {
-    val imgSize = 5
-    val filterSize = 3
-    val cpCoords = getConvSums( imgSize, filterSize ).zipWithIndex.map( cSet => {
-      cSet._1.map( v => Vector( cSet._2 - v(0)) ++ v.drop(1) )
+    val nodesInUk = ( 0 until 5 ).map( i => genTermUk( i ) ).toList
+    val node_cK = genCk( 1 )
+    val nodesIn = nodesInUk.map( uk => {
+      val n = Node( uk, node_cK )
+      n.setC()
+      n
     })
-    val latAdd = AnnealingSolver.needLatency( List( cpCoords ) )
-    println( "latAdd = " + latAdd )
-    val cp = cpCoords.zipWithIndex.map( cSet => {
-      cSet._1.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) })
-    })
-    var nodes = AnnealingSolver.init( List( cp ) )._1
-    nodes = AnnealingSolver.run( nodes, 100000000 )
-    assert( testLinks( nodes ), "Nodes must be connected properly" )
-    for ( n <- nodes )
-      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
-    AnnealingSolver.toDot( nodes, "conv3n5.dot" )
-    println( "cost = " + nodes.size )
-  }
-   */
-  @Test def conv3n5Par {
-    val imgSize = 5
-    val filterSize = 3
-    val cpCoords = getConvSums( imgSize, filterSize ).zipWithIndex.map( cSet => {
-      cSet._1.map( v => { Vector( cSet._2 - v(0)) ++ v.drop(1) }.to[Seq] )
-    }).toVector.to[Seq]
-    val latAdd = AnnealingSolver.needLatency( Vector( cpCoords ).to[Seq] )
-    println( "latAdd = " + latAdd )
-    val cp = cpCoords.map( cSet => {
-      cSet.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) }.to[Seq])
-    })
-    var nodes = AnnealingSolver.init( Vector( cp ).to[Seq] )._1
-    nodes = AnnealingSolver.runPar( nodes, 100000000, 1000000 )
-    assert( testLinks( nodes ), "Nodes must be connected properly" )
-    for ( n <- nodes )
-      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
-    AnnealingSolver.toDot( nodes, "conv3n5.dot" )
-    println( "cost = " + nodes.size )
-    val outNodes = nodes.filter( _.parentsIsEmpty() ).toVector
-    verifyHardware( nodes, outNodes )
-  }
+    val nReg = Node( nodesIn(0).getUkNext(), nodesIn(0).getCkNext() )
+    nReg.addChild( nodesIn(0) )
+    nReg.setB()
+    val nReg2 = Node( nodesIn(1).getUkNext(), nodesIn(1).getCkNext() )
+    nReg2.addChild( nodesIn(1) )
+    nReg2.setB()
+    val nAdd = Node( Vector( nodesIn.drop(2).map( _.getUkNext().head ).reduce( _ ++ _ ) ),
+      nodesIn.tail(2).getCkNext() )
+    nAdd.addChildren( nodesIn.drop(2) )
+    nAdd.setA()
+    val nPar = Node( Vector( nReg.getUkNext().head ++ nReg2.getUkNext().head ++ nAdd.getUkNext().head ),
+      nReg.getCkNext() )
+    nPar.addChildren( Set( nReg, nReg2, nAdd ) )
+    nPar.setA()
 
-  def binFilterToCp( convFilter : Seq[Seq[Seq[Seq[Int]]]], imgSize : (Int, Int), throughput : Int = 1 ) : Seq[Seq[Set[Seq[Int]]]] = {
+    for ( n <- nodesIn )
+      assert( Node.satisfiesConstraintC( n ) )
+    assert( Node.satisfiesConstraintB( nReg2 ) )
+    assert( Node.satisfiesConstraintA( nAdd ) )
+    assert( Node.satisfiesConstraintB( nReg ) )
+    assert( Node.satisfiesConstraintA( nPar ) )
 
-    val filterSize = ( convFilter(0)(0).size, convFilter(0)(0)(0).size, convFilter(0).size )
+    val nodeList = Transforms.trySwap( nPar )._1
 
-    val cp = ( 0 until convFilter.size ).map( convIdx => { // for each filter
-      val imgOut = ( 0 until imgSize._2 ).map( y => { // for each column in the img
-        ( 0 until imgSize._1 ).map( x => { // for each row in that column
-          ( 0 until filterSize._1 ).map( px => {
-            ( 0 until filterSize._2 ).map( py => {
-              ( 0 until filterSize._3 ).map( d => {
-                val xpx = x + px - (filterSize._1/2)
-                val ypy = y + py - (filterSize._2/2)
-                ( xpx, ypy, px, py, d )
-              }).filter{ case ( xpx, ypy, px, py, d ) => { // filter out zeros and any edge parts
-                val isZero = ( convFilter( convIdx )(d)(py)(px) == 0 )
-                ( xpx >= 0 && xpx < imgSize._1 && ypy >= 0 && ypy < imgSize._2 && !isZero )
-              }}.map{ case ( xpx, ypy, px, py, d ) => {
-                val addIdx = if ( convFilter( convIdx )(d)(py)(px) == 1 ) 1 else 0
-                val cyc = ( ypy*imgSize._2 + xpx )/throughput
-                val pos = (2*d) + addIdx + 2*filterSize._3*( ( ypy*imgSize._2 + xpx ) % throughput )
-                Vector( cyc, pos )
-              }}.toSet
-            }).reduce( _ ++ _ ) // sum over filter cols
-          }).reduce( _ ++ _ ) // sum over filter rows
-        })
-      }).reduce( _ ++ _ ) // collect image into a list
-      imgOut.zipWithIndex.groupBy( _._2 % throughput ).toVector.sortBy( _._1 ).map( _._2 ).map( v => v.map( s => s._1 ) )
-    }).reduce( _ ++ _ ).filter( cList => cList.find( !_.isEmpty ).isDefined ) // collect all outputs
+    assert( nodeList.size == 3 )
+    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd2() )
+    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd3() )
+    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd2() )
 
-    val cpCoords = cp.map( convFilt => {
-      convFilt.zipWithIndex.map( cSet => {
-        cSet._1.map( v => {Vector( cSet._2 - v(0)) ++ v.drop(1)}.to[Seq] )
-      }).toVector.to[Seq]
-    }).toVector.to[Seq]
-    val latAdd = AnnealingSolver.needLatency( cpCoords )
-    println( "latAdd = " + latAdd )
-    val cpFinal = cpCoords.map( convFilt => {
-      convFilt.map( cSet => {
-        cSet.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) }.to[Seq])
-      })
-    })
-    cpFinal
+    VerifyHardware( nodeList.toSet ++ nodesIn.toSet, List( nodeList(0) ) )
   }
 
   def genTrinary( filterSize : (Int, Int, Int, Int), imgSize : (Int, Int ), throughput : Int = 1 ) : Seq[Seq[Set[Seq[Int]]]] = {
@@ -873,9 +1147,9 @@ class SumScheduleSuite extends TestSuite {
             // cant deal with all 0 yet so just force not that case by putting 1 in mid
             val inMid = ( f1 == filterSize._1/2 && f2 == filterSize._2/2 && f3 == filterSize._3/2 )
             val trinary = {
-              if ( num < 8  )
+              if ( num < 45  )
                 1
-              else if ( num < 16 )
+              else if ( num < 90 )
                 -1
               else
                 0
@@ -885,20 +1159,7 @@ class SumScheduleSuite extends TestSuite {
         }).to[Seq]
       }).to[Seq]
     }.to[Seq]
-    binFilterToCp( convFilter, imgSize, throughput )
-  }
-
-  @Test def trinaryLayer {
-    val filterSize = ( 3, 3, 3, 128 )
-    val imgSize = ( 32, 32 )
-    val initNodes = AnnealingSolver.init( genTrinary( filterSize, imgSize, 2 ) )._1
-    println( "created " + initNodes.size + " nodes")
-    val nodes = AnnealingSolver.runPar( initNodes, 100000000, 1000000 )
-    assert( testLinks( nodes ), "Nodes must be connected properly" )
-    for ( n <- nodes )
-      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
-    AnnealingSolver.toDot( nodes, "trinary.dot" )
-    println( "cost = " + nodes.size )
+    AnnealingSolver.binFilterToCp( convFilter, imgSize, throughput )
   }
 
   @Test def minimalTest {
@@ -992,6 +1253,45 @@ class SumScheduleSuite extends TestSuite {
 
   }
 
+  @Test def minimalTest3 {
+    val nodeA_uk = Vector(Set(Vector(2, 7)))
+    val nodeB_uk = Vector(Set(Vector(6, 5), Vector(11, 2), Vector(12, 1), Vector(8, 3), Vector(7, 4), Vector(13, 0), Vector(3, 6)))
+    val nodeC_uk = Vector( Set(Vector(12, 2), Vector(7, 5), Vector(13, 1), Vector(8, 4) ))
+    val node_cK = Vector(-1, 2, 1, 1, 1, -1, 2, 1, 1, 1, -1, 2, 1, 1, 1, -1, -1, -1, -1, -1, -1, 0, -1, -1, -1)
+    val node_cK1 = node_cK.drop(1) ++ node_cK.take(1)
+    val node_cK2 = node_cK1.drop(1) ++ node_cK1.take(1)
+
+    val nodeA = Node( nodeA_uk, node_cK2.map( x => if ( x == 0 ) 0 else -1 ) )
+    val nodeB = Node( nodeB_uk, node_cK2.map( x => if ( x == 1 ) 0 else -1 ) )
+    val nodeC = Node( nodeB_uk, node_cK2.map( x => if ( x == 2 ) 0 else -1 ) )
+    val nReg = Node( nodeA.getUkNext(), nodeA.getCkNext )
+    nReg.addChild( nodeA )
+    nReg.setB()
+    val nMux = Node( nodeB.getUkNext() ++ nodeC.getUkNext(), node_cK1.map( x => if ( x < 1 ) -1 else x - 1 ) )
+    nMux.addChild( nodeB )
+    nMux.addChild( nodeC )
+    nMux.setB()
+    val nPar = Node( nReg.getUkNext() ++ nMux.getUkNext(), node_cK )
+    nPar.addChild( nReg )
+    nPar.addChild( nMux )
+    nPar.setB()
+
+    assert( Node.satisfiesConstraintB( nReg ) )
+    assert( Node.satisfiesConstraintB( nMux ) )
+    assert( Node.satisfiesConstraintB( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 3 )
+    assert( nodeList(0).isMux() )
+    assert( nodeList(1).isMux() )
+    assert( nodeList(2).isReg() )
+    for ( n <- nodeList )
+      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
+    for ( n <- nodeList )
+      assert( Node.isMinimal( n ), "Node must be minimal: " + n )
+  }
+
   @Test def hardwareGen {
     val nodeA = Node( Seq( Set(Seq( 0, 0 )) ), Seq( 0, -1, 0, -1 ) )
     val nodeB = Node( Seq( Set(Seq( 0, 1 )) ), Seq( -1, 0, -1, 0 ) )
@@ -1028,12 +1328,12 @@ class SumScheduleSuite extends TestSuite {
     val nodes = Set( nodeA, nodeB, nodeC, nodeD, mux1, mux2, mux3, reg1 )
 
     // test constraints
-    assert( testLinks( nodes ), "Nodes must be connected properly" )
+    assert( VerifyHardware.testLinks( nodes ), "Nodes must be connected properly" )
     for ( n <- nodes )
       assert( Node.satisfiesConstraints(n), "Node " + n + " must satisfy constraints" )
 
     // test hardware
-    verifyHardware( nodes, Vector( reg1, mux3 ) )
+    VerifyHardware( nodes, Vector( reg1, mux3 ) )
   }
 
   @Test def testVerifyHardware {
@@ -1053,32 +1353,7 @@ class SumScheduleSuite extends TestSuite {
     nReg.addChild( nIn.head )
     nAdd.addChildren( nIn.tail )
 
-    verifyHardware( Set( nPar, nAdd, nReg ) ++ nIn.toSet, List( nPar ) )
-  }
-
-  def readCsv( filename : String ) : Seq[Seq[Seq[Seq[Int]]]] = {
-    val reader = CSVReader.open(new File(filename))
-    val floatData = reader.all().map( x => x.map( _.toFloat.toInt ).to[Seq] )
-    reader.close()
-    // group into the convolutional filters
-    floatData.toVector.to[Seq].grouped(3).toVector.to[Seq].grouped(3).toVector.to[Seq]
-  }
-
-  @Test def binarizedConv {
-
-    // read in a conv filter
-    val filename = "src/main/resources/conv1.csv"
-    val conv = readCsv( filename )
-    val ( initNodes, outNodes, x ) = AnnealingSolver.init( binFilterToCp( conv, ( 32, 32 ) ) )
-    println( "created " + initNodes.size + " nodes")
-    val nodes = AnnealingSolver.runPar( initNodes, 100000000, 1000000 )
-    assert( testLinks( nodes ), "Nodes must be connected properly" )
-    for ( n <- nodes )
-      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
-    AnnealingSolver.toDot( nodes, "binConv2.dot" )
-    println( "cost = " + nodes.size )
-    val parNodes = outNodes.toVector
-    verifyHardware( nodes, parNodes )
+    VerifyHardware( Set( nPar, nAdd, nReg ) ++ nIn.toSet, List( nPar ) )
   }
 
   @Test def saveAndLoad {
@@ -1097,5 +1372,57 @@ class SumScheduleSuite extends TestSuite {
     //for ( n <- initNodes )
     // assert( newNodes.contains(n) )
   }
+
+
+  @Test def conv3n5 {
+    val imgSize = 5
+    val filterSize = 3
+    val cpCoords = VerifyHardware.getConvSums( imgSize, filterSize ).zipWithIndex.map( cSet => {
+      cSet._1.map( v => { Vector( cSet._2 - v(0)) ++ v.drop(1) }.to[Seq] )
+    }).toVector.to[Seq]
+    val latAdd = AnnealingSolver.needLatency( Vector( cpCoords ).to[Seq] )
+    println( "latAdd = " + latAdd )
+    val cp = cpCoords.map( cSet => {
+      cSet.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) }.to[Seq])
+    })
+    var nodes = AnnealingSolver.init( Vector( cp ).to[Seq] )._1
+    nodes = AnnealingSolver.runPar( nodes, 100000000, 1000000, true )
+    AnnealingSolver.toDot( nodes, "conv3n5.dot" )
+    println( "cost = " + nodes.size )
+    val outNodes = nodes.filter( _.parentsIsEmpty() ).toVector
+    VerifyHardware( nodes, outNodes )
+  }
+
+  /*
+  @Test def trinaryLayer {
+    val filterSize = ( 3, 3, 3, 128 )
+    val imgSize = ( 32, 32 )
+    val initNodes = AnnealingSolver.init( genTrinary( filterSize, imgSize, 2 ) )._1
+    println( "created " + initNodes.size + " nodes")
+    val nodes = AnnealingSolver.runPar( initNodes, 100000000, 1000000 )
+    assert( VerifyHardware.testLinks( nodes ), "Nodes must be connected properly" )
+    for ( n <- nodes )
+      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
+    AnnealingSolver.toDot( nodes, "trinary.dot" )
+    println( "cost = " + nodes.size )
+  }
+
+  @Test def binarizedConv {
+
+    // read in a conv filter
+    val filename = "src/main/resources/conv1.csv"
+    val conv = AnnealingSolver.readCsv( filename )
+    val ( initNodes, outNodes, x ) = AnnealingSolver.init( binFilterToCp( conv, ( 32, 32 ) ) )
+    println( "created " + initNodes.size + " nodes")
+    val nodes = AnnealingSolver.runPar( initNodes, 100000000, 1000000 )
+    assert( VerifyHardware.testLinks( nodes ), "Nodes must be connected properly" )
+    for ( n <- nodes )
+      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
+    AnnealingSolver.toDot( nodes, "binConv2.dot" )
+    println( "cost = " + nodes.size )
+    val parNodes = outNodes.toVector
+    VerifyHardware( nodes, parNodes )
+  }
+ */
 
 }

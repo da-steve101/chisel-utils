@@ -31,11 +31,12 @@ object Node {
   /** Create a node from compressed cp coords
     */
   def apply( uk : Seq[Set[Seq[Int]]], ck : Seq[Int] ) : Node = {
-    // ensure uk is sorted
-    val ukSorted = uk.zipWithIndex.sortBy( _._1.hashCode )
-    val mapping = ukSorted.map( _._2 ).zipWithIndex.sortBy( _._1 ).map( _._2 )
-    val ukOut = ukSorted.map( _._1 )
+    val distinctCk = ck.distinct.filter( _ != -1 ).sorted
+    assert( distinctCk.size != 0, "Cannot create empty node" )
+    // Must allow empty nodes to be created
+    val mapping = ( 0 to distinctCk.max ).map( i => distinctCk.indexOf( i ) )
     val ckOut = ck.map( cki => mapIdx( mapping, cki ) )
+    val ukOut = distinctCk.map( cki => uk( cki ) )
     val n = new Node( ukOut, ckOut )
     n
   }
@@ -112,11 +113,15 @@ object Node {
   /** Check that there are no extra numbers being put in there
     */
   def isMinimal( n : Node ) : Boolean = {
-    val parents = n.getParentSet()
     val nUk = n.getUkNext()
     val nCk = n.getCkNext()
+    val distinctCk = nCk.distinct.filter( _ != -1 )
+    if ( distinctCk.size != nUk.size )
+      return false
+    if ( n.parentsIsEmpty )
+      return true // termination node so can't check minimal
     // find out which mux have n as input and which cycle
-    val ckPar = parents.map( p => {
+    val ckPar = n.getParentSet().map( p => {
       if ( p.isA() )
         p.ck
       else {
@@ -245,8 +250,17 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
     for ( child <- getChildren() )
       removeChild( child )
   }
+  def isUsefulChild( c : Node ) : Boolean = {
+    c.getCkNext().zip( ck ).find( cks => {
+      ( cks._1 != -1 && cks._2 != -1 && (
+        c.getUkNext()(cks._1) == uk( cks._2 ) || // mux cond
+          c.getUkNext()( cks._1 ) == ( c.getUkNext()( cks._1 ) intersect uk( cks._2 ) ) // add cond
+      ))
+    }).isDefined
+  }
   def addChild( n : Node ) : Unit = {
     assert( isLocked(), "Node should be locked to addChild" )
+    assert( isUsefulChild(n), "Cannot add a useless child: " + this + ", child: " + n )
     children += n
     n.addParent( this )
   }

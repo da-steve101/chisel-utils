@@ -73,7 +73,7 @@ class NodeSet( nodesIn : Set[Node] ) {
 
   def -=( n : Node ) = { remove(n) }
   def +=( n : Node ) = { add(n) }
-  def ++=( nodeList : Seq[Node] ) = synchronized {
+  def ++=( nodeList : Iterable[Node] ) = synchronized {
     for( n <- nodeList )
       add( n )
   }

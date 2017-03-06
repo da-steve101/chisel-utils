@@ -102,6 +102,8 @@ object Transforms {
     val uKidx = ckCombined.distinct.filter( _ != ( -1, -1 ) )
     val ckNew = ckCombined.map( uKidx.indexOf( _ ) )
     // should never have one as -1 and not the other
+    assert( !uKidx.find( i => i._1 == -1 || i._2 == -1 ).isDefined,
+      "Invalid add combine of {" + uk1 + ", " + ck1 + "} and {" + uk2 + ", " + ck2 + "}" )
     val ukNew = uKidx.map( uki => uk1( uki._1 ) ++ uk2( uki._2 ) )
     ( ukNew, ckNew )
   }
@@ -121,7 +123,8 @@ object Transforms {
       else if ( cks._2 == -1 )
         uk1Idx( cks._1 )
       else {
-        assert( uk1Idx( cks._1 ) == uk2Idx( cks._2 ), "Invalid mux combine of {" + uk1 + ", " + ck1 + "} and {" + uk2 + ", " + ck2 + "}" )
+        assert( uk1Idx( cks._1 ) == uk2Idx( cks._2 ),
+          "Invalid mux combine of {" + uk1 + ", " + ck1 + "} and {" + uk2 + ", " + ck2 + "}" )
         uk1Idx( cks._1 )
       }
     })
@@ -165,7 +168,6 @@ object Transforms {
     nPar.removeChildren()
     val newNodes = nAdd23.getChildren().map( child => {
       val ck = filterCk( child, nAdd23 )
-      println( "ck = " + ck )
       val newNode = Node( child.getUkNext(), ck )
       newNode.addChild( child )
       newNode.addChild( child )
@@ -196,7 +198,12 @@ object Transforms {
     nPar.removeChildren()
     val newNodes = nMux.getChildren().map( child => {
       val ck = filterCk( child, nMux )
-
+      if ( ck.distinct.filter( _ != -1 ).size == 0 ) {
+        println( "nMux = " + nMux )
+        println( "child = " + child )
+        println( "nPar = " + nPar )
+        println( "nMux.getChildren() = " + nMux.getChildren() )
+      }
       val newNode = Node( child.getUkNext(), ck )
       newNode.addChild( child )
       newNode.setB()
@@ -377,24 +384,29 @@ object Transforms {
     List( nPar ) ++ newNodes.toList
   }
 
-  /** nSwap is 2 input add, nOther is mux nPar is add
+  /** nSwap is 2 input add, nOther is mux nPar is add2
     */
   private def swapCase9( nPar : Node, nAdd : Node, nMux : Node ) : Seq[Node] = {
+    if ( nAdd.isAdd3() )
+      return List[Node]()
     val ukcks = nMux.getChildren().map( child => {
       val newCk = filterCk( child, nMux )
-      val ukck = combineAdd( child.getUkNext(), newCk, nAdd.uk, nAdd.ck )
+      val addCk = filterCk( nAdd.ck, newCk )
+      val ukck = combineAdd( child.getUkNext(), newCk, nAdd.uk, addCk )
       ( ukck._1, ukck._2, child )
     })
     val newNodes = ukcks.map( ukck => {
       val n = Node( ukck._1, ukck._2 )
       n.addChildren( nAdd.getChildren() )
       n.addChild( ukck._3 )
+      n.setA()
       n
     })
     nAdd.removeChildren()
     nMux.removeChildren()
     nPar.removeChildren()
     nPar.addChildren( newNodes )
+    nPar.setB()
     List( nPar ) ++ newNodes.toList
   }
 
@@ -489,6 +501,7 @@ object Transforms {
         val muxComb = combineMux( child.getUkNext(), ckS, child.getUkNext(), ckO )
         val n = Node( muxComb._1, muxComb._2 )
         n.addChild( child )
+        n.setB()
         n
       })
       val remainAdd1Set = nAdd1.getChildren -- commonChildren
@@ -501,6 +514,7 @@ object Transforms {
       val muxNode = Node( muxComb._1, muxComb._2 )
       muxNode.addChild( remainAdd1 )
       muxNode.addChild( remainAdd2 )
+      muxNode.setB()
       nAdd1.removeChildren()
       nAdd2.removeChildren()
       nPar.removeChildren()
@@ -609,7 +623,8 @@ object Transforms {
     val nMuxChild = nMuxChildren._1
     val swapChild = nReg.getOnlyChild()
     val ckO = filterCk( nMuxChild, nMux )
-    val ukck = combineMux( nMuxChild.getUkNext(), ckO, swapChild.getUkNext(), swapChild.getCkNext() )
+    val ckSwap = filterCk( swapChild, nReg )
+    val ukck = combineMux( nMuxChild.getUkNext(), ckO, swapChild.getUkNext(), ckSwap )
     val muxNode = Node( ukck._1, ukck._2 )
     muxNode.addChild( nMuxChild )
     muxNode.addChild( swapChild )
@@ -638,7 +653,8 @@ object Transforms {
     }).reduce( (x,y) => combineAdd( x._1, x._2, y._1, y._2 ) )
     val newAdds = muxNode.getChildren().map( child => {
       val ck = filterCk( child, muxNode )
-      val ukck = combineAdd( child.getUkNext(), ck, ukckReg._1, ukckReg._2 )
+      val ckFiltered = filterCk( ukckReg._2, ck )
+      val ukck = combineAdd( child.getUkNext(), ck, ukckReg._1, ckFiltered )
       val addNode = Node( ukck._1, ukck._2 )
       addNode.addChild( child )
       for ( n <- commonNodes )
@@ -671,14 +687,17 @@ object Transforms {
     }
     // else 3 input, turn into 2 X 2 input
     val addSplit = nAdd.getRandomChild()
-    val ukck = combineAdd( addSplit._1.getUkNext(), addSplit._1.getCkNext(), nReg.uk, nReg.ck )
+    val addCk = filterCk( addSplit._1.getCkNext(), nAdd.ck )
+    val ukck = combineAdd( addSplit._1.getUkNext(), addCk, nReg.uk, nReg.ck )
     val newAddA = Node( ukck._1, ukck._2 )
     newAddA.addChild( addSplit._1 )
     newAddA.addChild( nReg.getOnlyChild() )
     newAddA.setA()
     val remainChildA = addSplit._2.head
+    val rCA_ck = filterCk( remainChildA.getCkNext(), nAdd.ck )
     val remainChildB = addSplit._2.tail.head
-    val ukckB = combineAdd( remainChildA.getUkNext(), remainChildA.getCkNext(), remainChildB.getUkNext(), remainChildB.getCkNext() )
+    val rCB_ck = filterCk( remainChildB.getCkNext(), nAdd.ck )
+    val ukckB = combineAdd( remainChildA.getUkNext(), rCA_ck, remainChildB.getUkNext(), rCB_ck )
     val newAddB = Node( ukckB._1, ukckB._2 )
     newAddB.addChild( remainChildA )
     newAddB.addChild( remainChildB )
@@ -693,41 +712,43 @@ object Transforms {
   private def swapCase19( nPar : Node, nAdd1 : Node, nAdd2 : Node, nMux : Node ) : Seq[Node] = {
     assert( nAdd1.numChildren() >= nAdd2.numChildren(), "nAdd1 should have more children" )
     val chosenChild = nAdd1.getRandomChild()
+    val chosenChild2 = nAdd2.getRandomChild()
     if ( nAdd1.numChildren() == 3 ) {
       // take a random child from nAdd1 and put with nAdd2
-      val ukck = combineAdd( chosenChild._1.getUkNext(), chosenChild._1.getCkNext(), nAdd2.uk, nAdd2.ck )
-      val newAdd1 = Node( ukck._1, ukck._2 )
-      newAdd1.addChild( chosenChild._1 )
-      newAdd1.addChildren( nAdd2.getChildren() )
-      newAdd1.setA()
-      val nAdd1_A = chosenChild._2.head
-      val nAdd1_B = chosenChild._2.tail.head
-      val ukck2 = combineAdd( nAdd1_A.getUkNext(), nAdd1_A.getCkNext(), nAdd1_B.getUkNext(), nAdd1_B.getCkNext() )
-      val newAdd2 = Node( ukck2._1, ukck2._2 )
-      newAdd2.addChild( nAdd1_A )
-      newAdd2.addChild( nAdd1_B )
-      newAdd2.setA()
+      val childList1 = chosenChild._2.toList ++ List( chosenChild2._1 )
+      val childList2 = chosenChild2._2.toList ++ List( chosenChild._1 )
+      val newAdds = List( childList1, childList2 ).map( childList => {
+        val ukck = childList.map( n => {
+          ( n.getUkNext(), n.getCkNext() )
+        }).reduce( (x, y ) => combineAdd( x._1, x._2, y._1, y._2 ) )
+        val newAdd = Node( ukck._1, ukck._2 )
+        newAdd.addChildren( childList )
+        newAdd.setA()
+        newAdd
+      })
       nAdd1.removeChildren()
       nAdd2.removeChildren()
-      nPar.replaceIfChild( nAdd1, newAdd1 )
-      nPar.replaceIfChild( nAdd2, newAdd2 )
-      return List( nPar, newAdd1, newAdd2, nMux )
+      nPar.removeChildren()
+      nPar.addChildren( newAdds ++ List( nMux ) )
+      return List( nPar, nMux ) ++ newAdds
     }
     // else both 2 input adds
-    val ukck = combineAdd( nAdd2.uk, nAdd2.ck, chosenChild._1.getUkNext(), chosenChild._1.getCkNext() )
+    val cC_cK = filterCk( chosenChild._1.getCkNext(), nAdd1.ck )
+    val ukck = combineAdd( nAdd2.uk, nAdd2.ck, chosenChild._1.getUkNext(), cC_cK )
     val newAdd2 = Node( ukck._1, ukck._2 )
     newAdd2.addChildren( nAdd2.getChildren() )
     newAdd2.addChild( chosenChild._1 )
     newAdd2.setA()
     val regNode = chosenChild._2.head
-    val newReg = Node( regNode.getUkNext(), regNode.getCkNext() )
+    val regCk = filterCk( regNode.getCkNext(), nAdd1.ck )
+    val newReg = Node( regNode.getUkNext(), regCk )
     newReg.addChild( regNode )
     newReg.setB()
     nAdd2.removeChildren()
     nAdd1.removeChildren()
     nPar.replaceIfChild( nAdd1, newReg )
     nPar.replaceIfChild( nAdd2, newAdd2 )
-    List( nPar, newReg, newAdd2, nMux )
+    List( nPar, nMux, newReg, newAdd2 )
   }
 
   private def swapCase20( nPar : Node, nAdd1 : Node, nAdd2 : Node, nReg : Node ) : Seq[Node] = {
@@ -748,8 +769,10 @@ object Transforms {
     // else 3 and 3, take one from each and put with reg
     val chosenChild1 = nAdd1.getRandomChild()
     val chosenChild2 = nAdd2.getRandomChild()
-    val ukckTmp = combineAdd( chosenChild1._1.getUkNext(), chosenChild1._1.getCkNext(),
-      chosenChild2._1.getUkNext(), chosenChild2._1.getCkNext() )
+    val cC1_ckFiltered = filterCk( chosenChild1._1.getCkNext(), nAdd1.ck )
+    val cC2_ckFiltered = filterCk( chosenChild2._1.getCkNext(), nAdd2.ck )
+    val ukckTmp = combineAdd( chosenChild1._1.getUkNext(), cC1_ckFiltered,
+      chosenChild2._1.getUkNext(), cC2_ckFiltered )
     val ukck3 = combineAdd( ukckTmp._1, ukckTmp._2, nReg.uk, nReg.ck )
     val newAdd3 = Node( ukck3._1, ukck3._2 )
     newAdd3.addChild( chosenChild1._1 )
@@ -757,8 +780,12 @@ object Transforms {
     newAdd3.addChild( nReg.getOnlyChild() )
     val otherChild1 = chosenChild1._2.toSet
     val otherChild2 = chosenChild2._2.toSet
-    val ukck1 = otherChild1.map( x => ( x.uk, x.ck ) ).reduce( ( x, y ) => combineAdd( x._1, x._2, y._1, y._2 ) )
-    val ukck2 = otherChild2.map( x => ( x.uk, x.ck ) ).reduce( ( x, y ) => combineAdd( x._1, x._2, y._1, y._2 ) )
+    val ukck1 = otherChild1.map( x => ( x.getUkNext(), filterCk( x.getCkNext(), nAdd1.ck ) ) ).reduce( ( x, y ) => {
+      combineAdd( x._1, x._2, y._1, y._2 )
+    })
+    val ukck2 = otherChild2.map( x => ( x.getUkNext(), filterCk( x.getCkNext(), nAdd2.ck ) ) ).reduce( ( x, y ) => {
+      combineAdd( x._1, x._2, y._1, y._2 )
+    })
     val newAdd1 = Node( ukck1._1, ukck1._2 )
     val newAdd2 = Node( ukck2._1, ukck2._2 )
     newAdd1.addChildren( otherChild1 )
@@ -771,7 +798,7 @@ object Transforms {
     nAdd2.removeChildren()
     nPar.removeChildren()
     nPar.addChildren( Set( newAdd1, newAdd2, newAdd3 ) )
-    List( nPar ) ++ nPar.getChildren().toList
+    List( nPar ) ++ List( newAdd1, newAdd2, newAdd3 )
   }
 
   private def swapCase21( nPar : Node ) : Seq[Node] = {
@@ -909,42 +936,34 @@ object Transforms {
       }
     })
 
-    val ( n1Par, n2Par ) = shuffledPar.splitAt( splitIdx + 1 )
-    val ( ck1, ck2 ) = ckNeeded.splitAt( splitIdx + 1 )
-    val n1Ck = ( 0 until nA.nodeSize ).map( idx => ck1.map( cks => cks( idx ) ).reduce( (x,y) => {
-      if ( x == -1 )
-        y
-      else {
-        assert( y == x || y == -1, "Invalid combining of parents" )
-        x
-      }
-    })).toVector
-    val n2Ck = ( 0 until nA.nodeSize ).map( idx => ck2.map( cks => cks( idx ) ).reduce( (x,y) => {
-      if ( x == -1 )
-        y
-      else {
-        assert( y == x || y == -1, "Invalid combining of parents" )
-        x
-      }
-    })).toVector
-    val n1 = Node( nA.uk, n1Ck )
-    val n2 = Node( nA.uk, n2Ck )
-    n1.addChildren( nA.getChildren() )
-    n2.addChildren( nA.getChildren() )
-    if ( nA.isA() ) {
-      n1.setA()
-      n2.setA()
-    }
-    if ( nA.isB() ) {
-      n1.setB()
-      n2.setB()
-    }
-    for ( p <- n1Par )
-      p.replaceIfChild( nA, n1 )
-    for ( p <- n2Par )
-      p.replaceIfChild( nA, n2 )
-
-    return List( n1, n2 )
+    val ( parSplit1, parSplit2 ) = shuffledPar.zip( ckNeeded ).splitAt( splitIdx + 1 )
+    val newNodes = List( parSplit1, parSplit2 ).map( parSplit => {
+      val nCk = ( 0 until nA.nodeSize ).map( idx => {
+        parSplit.map( cks => cks._2( idx ) ).reduce( (x,y) => {
+          if ( x == -1 )
+            y
+          else {
+            assert( y == x || y == -1, "Invalid combining of parents" )
+            x
+          }
+        })
+      }).toVector
+      val n = Node( nA.uk, nCk )
+      if ( nA.isA() )
+        n.setA()
+      if ( nA.isB() )
+        n.setB()
+      // if nA is mux then check so not adding useless children
+      if ( nA.isMux() ) {
+        n.addChildren( nA.getChildren().filter( c => n.isUsefulChild(c) ) )
+        assert( n.numChildren() > 0, "Must have atleast 1 useful child" )
+      } else
+        n.addChildren( nA.getChildren() )
+      for ( p <- parSplit )
+        p._1.replaceIfChild( nA, n )
+      n
+    })
+    newNodes
   }
 
 }
