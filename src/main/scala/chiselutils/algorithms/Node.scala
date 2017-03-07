@@ -31,12 +31,14 @@ object Node {
   /** Create a node from compressed cp coords
     */
   def apply( uk : Seq[Set[Seq[Int]]], ck : Seq[Int] ) : Node = {
-    val distinctCk = ck.distinct.filter( _ != -1 ).sorted
+    val distinctUk = uk.distinct
+    val ukMapping = uk.map( uki => distinctUk.indexOf( uki ) )
+    val ckMapped = ck.map( cki => mapIdx( ukMapping, cki ) )
+    val distinctCk = ckMapped.distinct.filter( _ != -1 ).sorted
     assert( distinctCk.size != 0, "Cannot create empty node" )
-    // Must allow empty nodes to be created
     val mapping = ( 0 to distinctCk.max ).map( i => distinctCk.indexOf( i ) )
-    val ckOut = ck.map( cki => mapIdx( mapping, cki ) )
-    val ukOut = distinctCk.map( cki => uk( cki ) )
+    val ckOut = ckMapped.map( cki => mapIdx( mapping, cki ) )
+    val ukOut = distinctCk.map( cki => distinctUk( cki ) )
     val n = new Node( ukOut, ckOut )
     n
   }
@@ -135,9 +137,10 @@ object Node {
         })
       }
     })
-    !( 0 until nCk.size ).find( idx => {
+    val minimalViolation = ( 0 until nCk.size ).find( idx => {
       nCk(idx) != -1 && !ckPar.find( p => p(idx) != -1 ).isDefined
-    }).isDefined
+    })
+    !minimalViolation.isDefined
   }
 
   /** Check that this node satisfies constraints

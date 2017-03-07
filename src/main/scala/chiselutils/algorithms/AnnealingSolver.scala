@@ -474,6 +474,10 @@ object AnnealingSolver {
 
               if ( parLocks._1 ) {
                 // perform it with some probability if it increases the cost
+                val nodeChildren = node.getChildren()
+                val selChildren = selNode.get.getChildren()
+                val nodeParents = node.getParents()
+                val selParents = selNode.get.getParents()
                 val res = performMerge( node, selNode.get )
                 if ( res.isDefined ) {
                   assert( node.isLocked() && selNode.get.isLocked(), "Should be removing locked nodes" )
@@ -484,6 +488,15 @@ object AnnealingSolver {
                   nodes -= selNode.get
                   nodes += res.get
 
+                  for ( n <- List( res.get ) ++ res.get.getChildren() ) {
+                    assert( Node.isMinimal( n ),
+                      "node " + n + " should be minimal after merge of " + node + " and " + selNode.get +
+                        " has parents " + n.getParentSet() +
+                        " node children " + nodeChildren + " node parents " + nodeParents +
+                        " sel children " + selChildren + " sel parents " + selParents
+                    )
+                  }
+
                   res.get.unlockNode()
                 }
                 parLocks._2.map( n => n.unlockNode() )
@@ -492,27 +505,39 @@ object AnnealingSolver {
             }
           } else  {
             // check if have to do split instead of swap
-            if ( node.getChildren().find( n => n.getParentSet.size > 1 ).isDefined ) {
+            val nodeToSplit = node.getChildren().find( n => n.getParentSet.size > 1 )
+            if ( nodeToSplit.isDefined ) {
               if ( applyIfIncrease ) {
-                val nodeToSplit = node.getChildren().find( n => n.getParentSet.size > 1 ).get
-                val nodeList = performSplit( nodeToSplit )
+                assert( Node.isMinimal( nodeToSplit.get ) )
+                val oldParents = nodeToSplit.get.getParentSet
+                val oldChildren = nodeToSplit.get.getChildren
+                val nodeList = performSplit( nodeToSplit.get )
                 if ( nodeList.size > 0 ) {
-                  assert( nodeToSplit.isLocked(), "Should be removing locked nodes" )
-                  assert( lockRes._2.contains( nodeToSplit ), "Should hold locks" )
-                  assert( nodeToSplit.parentsIsEmpty, "Should not be connected" )
+                  assert( nodeToSplit.get.isLocked(), "Should be removing locked nodes" )
+                  assert( lockRes._2.contains( nodeToSplit.get ), "Should hold locks" )
+                  assert( nodeToSplit.get.parentsIsEmpty, "Should not be connected" )
 
-                  nodes -= nodeToSplit
+                  nodes -= nodeToSplit.get
                   nodes ++= nodeList
 
-                  nodeList.map( n => n.unlockNode() )
+                  for( n <- nodeList ++ nodeList.map( _.getChildren() ).reduce( _ ++ _ ) ) {
+                    assert( Node.isMinimal( n ),
+                      "node " + n + " should be minimal after split of " + nodeToSplit.get + " has parents " + n.getParentSet() +
+                        " old children " + oldChildren + " old parents " + oldParents )
+                  }
+
+                  for ( n <- nodeList )
+                    n.unlockNode()
                   splitCount.incrementAndGet()
                 }
               }
             } else { // else swap
               val nodeChildren = node.getChildren()
+              val grandChildren = nodeChildren.map( _.getChildren() )
               if ( safeMode ) {
                 for ( n <- nodeChildren )
-                  assert( Node.isMinimal( n ), "node " + n + " should be minimal and has parents " + n.getParentSet() )
+                  assert( Node.isMinimal( n ), "node " + n + " should be minimal and has parents " + n.getParentSet() +
+                    " old children " + nodeChildren + " grandchildren " + grandChildren )
                 if ( !node.parentsIsEmpty )
                   assert( Node.isMinimal( node ),
                     "Node " + node + " should be minimal and has parents " + node.getParentSet() )
@@ -530,8 +555,11 @@ object AnnealingSolver {
                 val newNodes = res._1.drop(1).toSet -- nodeChildren
                 nodes ++= newNodes
 
-                for( n <- res._1.drop(1) )
-                  assert( Node.isMinimal( n ), "node " + n + " should be minimal after swap " + res._2 + " has parents " + n.getParentSet() )
+                for( n <- res._1.drop(1) ) {
+                  assert( Node.isMinimal( n ),
+                    "node " + n + " should be minimal after swap " + res._2 +
+                      " has parents " + n.getParentSet() + " old children " + nodeChildren + " grandchildren " + grandChildren )
+                }
                 if ( !node.parentsIsEmpty )
                   assert( Node.isMinimal( node ),
                     "Node " + node + " should be minimal after swap " + res._2 + " has parents " + node.getParentSet() )

@@ -26,6 +26,11 @@ class SumScheduleSuite extends TestSuite {
   }
 
   def genCk( noUk : Int ) : Seq[Int] = {
+    while ( true ) {
+      val newCk = Vector.fill( nodeSize ) { myRand.nextInt( noUk + 1 ) - 1 }
+      if ( ( 0 until noUk ).map( i => newCk.contains( i ) ).reduce( _ && _ ) )
+        return newCk
+    }
     Vector.fill( nodeSize ) { myRand.nextInt( noUk + 1 ) - 1 }
   }
 
@@ -589,9 +594,9 @@ class SumScheduleSuite extends TestSuite {
 
     assert( nodeList.size == 4 )
     assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd3() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isMux() )
+    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isReg() )
     assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isReg() )
-    assert( Node.satisfiesConstraintB( nodeList(3) ) && nodeList(3).isReg() )
+    assert( Node.satisfiesConstraintB( nodeList(3) ) && nodeList(3).isMux() )
 
     VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
   }
@@ -1292,6 +1297,76 @@ class SumScheduleSuite extends TestSuite {
       assert( Node.isMinimal( n ), "Node must be minimal: " + n )
   }
 
+  @Test def minimalTest4 {
+    val nPar = Node( Vector(Set(Vector(9, 4)), Set(Vector(15, 0), Vector(5, 6), Vector(13, 2), Vector(9, 4), Vector(10, 3))), Vector(-1, -1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, -1, 0, 0, 0, -1, -1, -1, -1) )
+    val n1Child = Node( Vector(Set(Vector(8, 4))), Vector(-1, 0, -1, -1, -1, 0, 0, -1, -1, -1, 0, 0, -1, -1, -1, 0, -1, 0, 0, 0, -1, -1, -1, -1, -1) )
+    val n2Child = Node( Vector(Set(Vector(14, 0), Vector(12, 2), Vector(9, 3), Vector(4, 6), Vector(8, 4))), Vector(-1, -1, 0, 0, 0, -1, -1, 0, 0, 0, -1, -1, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
+    val nodeA = Node( Vector(Set(Vector(7, 4))), Vector(0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
+    val nodeB = Node( Vector(Set(Vector(2, 7)), Set(Vector(7, 4))), Vector(0, -1, -1, -1, 1, 0, -1, -1, -1, 1, 0, -1, -1, -1, 1, -1, 1, 1, 1, -1, -1, -1, -1, -1, -1) )
+    val nodeC = Node( Vector(Set(Vector(11, 2), Vector(8, 3), Vector(7, 4), Vector(13, 0), Vector(3, 6))), Vector(-1, 0, 0, 0, -1, -1, 0, 0, 0, -1, -1, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
+    nodeA.setB()
+    nodeB.setB()
+    nodeC.setA()
+    n1Child.setB()
+    n2Child.setB()
+    nPar.setB()
+    n1Child.addChild( nodeA )
+    n1Child.addChild( nodeB )
+    n2Child.addChild( nodeC )
+    nPar.addChild( n1Child )
+    nPar.addChild( n2Child )
+
+    assert( Node.satisfiesConstraintB( n1Child ) )
+    assert( Node.satisfiesConstraintB( n2Child ) )
+    assert( Node.satisfiesConstraintB( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 3 )
+    assert( nodeList(0).isMux() )
+    assert( nodeList(1).isMux() )
+    assert( nodeList(2).isReg() )
+    for ( n <- nodeList )
+      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
+    for ( n <- nodeList.drop(1) )
+      assert( Node.isMinimal( n ), "Node must be minimal: " + n )
+
+  }
+
+  @Test def minimalTest5 {
+    val nPar = Node( Vector(Set(Vector(7, 6), Vector(10, 5), Vector(11, 4), Vector(12, 3)), Set(Vector(6, 7)), Set(Vector(10, 5), Vector(12, 3), Vector(11, 4)), Set(Vector(11, 4)), Set(Vector(12, 3), Vector(17, 0)), Set(Vector(17, 0)), Set(Vector(16, 1), Vector(11, 4))), Vector(0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 2, 2, 2, 1, 1, 2, 2, 2, 1, 6, 4, 4, 4, 5, 3) )
+    val n1 = Node( Vector(Set(Vector(9, 5), Vector(10, 4), Vector(11, 3)), Set(Vector(16, 0), Vector(11, 3)), Set(Vector(6, 6), Vector(9, 5), Vector(11, 3), Vector(10, 4))), Vector(2, 2, -1, -1, 0, 0, 0, -1, -1, 0, 0, 0, -1, -1, 0, 0, 0, -1, -1, 1, 1, 1, -1, -1, 2) )
+    val n2 = Node( Vector(Set(Vector(10, 4)), Set(Vector(5, 7)), Set(Vector(16, 0)), Set(Vector(10, 4), Vector(15, 1))), Vector(-1, -1, 1, 1, -1, -1, -1, 1, 1, -1, -1, -1, 1, 1, -1, -1, -1, 1, 3, -1, -1, -1, 2, 0, -1) )
+    n1.setB()
+    n2.setB()
+    nPar.setB()
+    nPar.addChildren( Set( n1, n2 ) )
+
+    val nodeA = Node( Vector(Set(Vector(8, 5), Vector(9, 4), Vector(10, 3)), Set(Vector(15, 0), Vector(10, 3)), Set(Vector(5, 6), Vector(8, 5), Vector(10, 3), Vector(9, 4))), Vector(2, -1, -1, 0, 0, 0, -1, -1, 0, 0, 0, -1, -1, 0, 0, 0, -1, -1, 1, 1, 1, -1, -1, 2, 2) )
+    val nodeB = Node( Vector(Set(Vector(9, 4)), Set(Vector(4, 7)), Set(Vector(8, 5))), Vector(-1, 0, 1, -1, -1, -1, 1, 1, -1, -1, -1, 1, 1, -1, -1, -1, 1, 2, -1, -1, -1, 0, 0, -1, -1) )
+    val nodeC = Node( Vector(Set(Vector(15, 0)), Set(Vector(9, 4), Vector(14, 1)), Set(Vector(4, 7))), Vector(-1, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, -1, -1, -1, 0, -1, -1, -1) )
+    nodeA.setB()
+    nodeB.setB()
+    nodeC.setB()
+    n2.addChildren( Set( nodeB, nodeC ) )
+    n1.addChild( nodeA )
+
+    assert( Node.satisfiesConstraintB( n1 ) )
+    assert( Node.satisfiesConstraintB( n2 ) )
+    assert( Node.satisfiesConstraintB( nPar ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    assert( nodeList.size == 3 )
+    assert( nodeList(0).isMux() )
+    assert( nodeList(1).isMux() )
+    assert( nodeList(2).isReg() )
+    for ( n <- nodeList )
+      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
+    for ( n <- nodeList.drop(1) )
+      assert( Node.isMinimal( n ), "Node must be minimal: " + n )
+  }
+
   @Test def hardwareGen {
     val nodeA = Node( Seq( Set(Seq( 0, 0 )) ), Seq( 0, -1, 0, -1 ) )
     val nodeB = Node( Seq( Set(Seq( 0, 1 )) ), Seq( -1, 0, -1, 0 ) )
@@ -1372,7 +1447,6 @@ class SumScheduleSuite extends TestSuite {
     //for ( n <- initNodes )
     // assert( newNodes.contains(n) )
   }
-
 
   @Test def conv3n5 {
     val imgSize = 5
