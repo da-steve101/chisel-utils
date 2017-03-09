@@ -22,7 +22,7 @@ private class MyModTests( c : MyMod ) extends Tester( c ) {
   val numIn = c.io.in.bits.size
   val numOut = c.io.out.bits.size
   val latency = c.myNodes.map( n => Node.latency( n ) ).max
-  val cycs = c.myNodes.iterator.next.ck.size * 2
+  val cycs = math.max( c.myNodes.iterator.next.ck.size, latency ) * 2
   val testInputs = ( 0 until cycs ).toSeq.map( c =>
     ( 0 until numIn ).toSeq.map( ni => BigInt( myRand.nextInt( maxVal ) ) )
   )

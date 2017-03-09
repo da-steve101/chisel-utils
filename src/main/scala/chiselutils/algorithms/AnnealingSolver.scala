@@ -103,7 +103,7 @@ object AnnealingSolver {
     val allNodes = collection.mutable.Set( n )
     var currNode = n
     for ( i <- 0 until regDelay ) {
-      val newNode = Node( currNode.getUkPrev(), currNode.getCkPrev() )
+      val newNode = Node( currNode.getUkPrev, currNode.getCkPrev )
       currNode.addChild( newNode )
       currNode.addChild( newNode )
       currNode.setB()
@@ -136,10 +136,10 @@ object AnnealingSolver {
 
     val combOp = addOpOrdering.dropRight( 1 ).last.toSet
     val newLuK = Node.ukPrev( Vector( elementList.zipWithIndex.filter( e => combOp.contains( e._2 ) ).map( _._1 ).toSet ) )
-    val newLcK = currNode.getCkPrev() // same as is an add
+    val newLcK = currNode.getCkPrev // same as is an add
     val newLNode = Node( newLuK, newLcK )
     val newRuK = Node.ukPrev( Vector( elementList.zipWithIndex.filterNot( e => combOp.contains( e._2 ) ).map( _._1 ).toSet ) )
-    val newRcK = currNode.getCkPrev() // same as is an add
+    val newRcK = currNode.getCkPrev // same as is an add
     val newRNode = Node( newRuK, newRcK )
     currNode.addChild( newLNode )
     currNode.addChild( newRNode )
@@ -161,7 +161,7 @@ object AnnealingSolver {
     val allNodes = collection.mutable.Set( n )
     var currNode = n
     for ( i <- 0 until regDelays ) {
-      val newNode = Node( currNode.getUkPrev(), currNode.getCkPrev() )
+      val newNode = Node( currNode.getUkPrev, currNode.getCkPrev )
       currNode.addChild( newNode )
       currNode.addChild( newNode )
       currNode.setB()
@@ -170,8 +170,8 @@ object AnnealingSolver {
     }
 
     if ( n.uk.size == 2 ) {
-      val nA = Node( Vector( currNode.getUkPrev().head ), currNode.getCkPrev().map( ck => if ( ck == 0 ) 0 else -1 ) )
-      val nB = Node( Vector( currNode.getUkPrev().last ), currNode.getCkPrev().map( ck => if ( ck == 1 ) 0 else -1 ) )
+      val nA = Node( Vector( currNode.getUkPrev.head ), currNode.getCkPrev.map( ck => if ( ck == 0 ) 0 else -1 ) )
+      val nB = Node( Vector( currNode.getUkPrev.last ), currNode.getCkPrev.map( ck => if ( ck == 1 ) 0 else -1 ) )
       currNode.addChild( nA )
       currNode.addChild( nB )
       currNode.setB()
@@ -195,11 +195,11 @@ object AnnealingSolver {
 
     val combOp = muxOpOrdering.dropRight( 1 ).last.toVector.sorted
     val combNot = ( 0 until currNodeTime.size ).filterNot( e => combOp.contains( e ) )
-    val newLuK = currNode.getUkPrev().zipWithIndex.filter( e => combOp.contains( e._2 ) ).map( _._1 )
-    val newLcK = currNode.getCkPrev().map( ck => combOp.indexOf( ck ) )
+    val newLuK = currNode.getUkPrev.zipWithIndex.filter( e => combOp.contains( e._2 ) ).map( _._1 )
+    val newLcK = currNode.getCkPrev.map( ck => combOp.indexOf( ck ) )
     val newLNode = Node( newLuK, newLcK )
-    val newRuK = currNode.getUkPrev().zipWithIndex.filterNot( e => combOp.contains( e._2 ) ).map( _._1 )
-    val newRcK = currNode.getCkPrev().map( ck => combNot.indexOf( ck ) )
+    val newRuK = currNode.getUkPrev.zipWithIndex.filterNot( e => combOp.contains( e._2 ) ).map( _._1 )
+    val newRcK = currNode.getCkPrev.map( ck => combNot.indexOf( ck ) )
     val newRNode = Node( newRuK, newRcK )
     currNode.addChild( newLNode )
     currNode.addChild( newRNode )
@@ -419,22 +419,22 @@ object AnnealingSolver {
   def runPar( nodesIn : Set[Node], iter : Int, innerLoopSize : Int = 100000, safeMode : Boolean = false ) : Set[Node] = {
     val nodes = new NodeSet( nodesIn )
 
-    val iterDub = iter.toDouble/innerLoopSize
+    val iterDub = iter.toDouble
     val A = math.log( 0.01 )/iterDub
 
     var oldTime = System.currentTimeMillis()
     val myTRand = java.util.concurrent.ThreadLocalRandom.current()
 
-    for( i <- 0 until iter/innerLoopSize ) {
+    for( i <- 0 until iter ) {
       // decay the likelihood of performing an operation that makes the solution worse
       val threshold = (1 - math.exp( A*(i + 1)))/0.99
       val currTime = System.currentTimeMillis()
-      println( "progress = " + (i*innerLoopSize) + "/" + iter + ", threshold = " + threshold +
+      println( "progress = " + i + "/" + iter + ", threshold = " + threshold +
         ", cost = " + nodes.size + ", time = " + (( currTime - oldTime ).toDouble/60000) + " mins")
       oldTime = currTime
       val mergeCount = new java.util.concurrent.atomic.AtomicInteger()
       val splitCount = new java.util.concurrent.atomic.AtomicInteger()
-      val swapCount = new java.util.concurrent.atomic.AtomicInteger()
+      val swapCount = Vector.fill( 21 ) ( new java.util.concurrent.atomic.AtomicInteger() )
       if ( safeMode ) {
         // do expensive checks
         for ( n <- nodes ) {
@@ -442,10 +442,12 @@ object AnnealingSolver {
             assert( nodes.contains( nc ) )
           assert( !n.isLocked() )
           assert( Node.verifyNode( n ) )
+          assert( !n.isAdd3() )
         }
       }
       println( "Start inner loop" )
       (  0 until innerLoopSize ).par.foreach( j => {
+      // (  0 until innerLoopSize ).foreach( j => {
 
         val tmpSync = nodes.randomNode()
 
@@ -488,19 +490,22 @@ object AnnealingSolver {
                   nodes -= selNode.get
                   nodes += res.get
 
-                  for ( n <- List( res.get ) ++ res.get.getChildren() ) {
-                    assert( Node.isMinimal( n ),
-                      "node " + n + " should be minimal after merge of " + node + " and " + selNode.get +
-                        " has parents " + n.getParentSet() +
-                        " node children " + nodeChildren + " node parents " + nodeParents +
-                        " sel children " + selChildren + " sel parents " + selParents
-                    )
+                  if ( safeMode ) {
+                    for ( n <- List( res.get ) ++ res.get.getChildren() ) {
+                      assert( Node.satisfiesConstraints( n ) )
+                      assert( Node.isMinimal( n ),
+                        "node " + n + " should be minimal after merge of " + node + " and " + selNode.get +
+                          " has parents " + n.getParentSet() +
+                          " node children " + nodeChildren + " node parents " + nodeParents +
+                          " sel children " + selChildren + " sel parents " + selParents
+                      )
+                    }
                   }
 
                   res.get.unlockNode()
+                  mergeCount.incrementAndGet()
                 }
                 parLocks._2.map( n => n.unlockNode() )
-                mergeCount.incrementAndGet()
               }
             }
           } else  {
@@ -520,10 +525,13 @@ object AnnealingSolver {
                   nodes -= nodeToSplit.get
                   nodes ++= nodeList
 
-                  for( n <- nodeList ++ nodeList.map( _.getChildren() ).reduce( _ ++ _ ) ) {
-                    assert( Node.isMinimal( n ),
-                      "node " + n + " should be minimal after split of " + nodeToSplit.get + " has parents " + n.getParentSet() +
-                        " old children " + oldChildren + " old parents " + oldParents )
+                  if ( safeMode ) {
+                    for( n <- nodeList ++ nodeList.map( _.getChildren() ).reduce( _ ++ _ ) ) {
+                      assert( Node.satisfiesConstraints( n ) )
+                      assert( Node.isMinimal( n ),
+                        "node " + n + " should be minimal after split of " + nodeToSplit.get + " has parents " + n.getParentSet() +
+                          " old children " + oldChildren + " old parents " + oldParents )
+                    }
                   }
 
                   for ( n <- nodeList )
@@ -555,17 +563,22 @@ object AnnealingSolver {
                 val newNodes = res._1.drop(1).toSet -- nodeChildren
                 nodes ++= newNodes
 
-                for( n <- res._1.drop(1) ) {
-                  assert( Node.isMinimal( n ),
-                    "node " + n + " should be minimal after swap " + res._2 +
+                if ( safeMode ) {
+                  for ( n <- res._1 ) {
+                    assert( Node.satisfiesConstraints( n ), "Node " + n + " does not satisfy constraints after swap " + res._2 +
                       " has parents " + n.getParentSet() + " old children " + nodeChildren + " grandchildren " + grandChildren )
+                    assert( Node.isMinimal( n ),
+                      "node " + n + " should be minimal after swap " + res._2 +
+                        " has parents " + n.getParentSet() + " old children " + nodeChildren + " grandchildren " + grandChildren )
+                    assert( !n.isAdd3(), "Node " + n + " is Add3 after " + res._2 )
+                  }
+                  if ( !node.parentsIsEmpty )
+                    assert( Node.isMinimal( node ),
+                      "Node " + node + " should be minimal after swap " + res._2 + " has parents " + node.getParentSet() )
                 }
-                if ( !node.parentsIsEmpty )
-                  assert( Node.isMinimal( node ),
-                    "Node " + node + " should be minimal after swap " + res._2 + " has parents " + node.getParentSet() )
                 for ( n <- newNodes )
                   n.unlockNode() // only unlock new nodes
-                swapCount.incrementAndGet()
+                swapCount( res._2 - 1 ).incrementAndGet()
               }
             }
           }
@@ -574,7 +587,8 @@ object AnnealingSolver {
       })
       println( "mergeCount = " + mergeCount.get() )
       println( "splitCount = " + splitCount.get() )
-      println( "swapCount = " + swapCount.get() )
+      for ( i <- 0 until swapCount.size )
+        println( "swapCount( " + (i + 1 ) + " )  = " + swapCount(i).get() )
     }
     // final verification
     nodes.foreach( n => {

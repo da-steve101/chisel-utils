@@ -115,8 +115,8 @@ object Node {
   /** Check that there are no extra numbers being put in there
     */
   def isMinimal( n : Node ) : Boolean = {
-    val nUk = n.getUkNext()
-    val nCk = n.getCkNext()
+    val nUk = n.getUkNext
+    val nCk = n.getCkNext
     val distinctCk = nCk.distinct.filter( _ != -1 )
     if ( distinctCk.size != nUk.size )
       return false
@@ -223,8 +223,8 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
       "_"
   }
 
-  def getCkPrev() = { ck.drop(1) ++ ck.take(1) }
-  def getCkNext() = { ck.takeRight(1) ++ ck.dropRight(1) }
+  lazy val getCkPrev = ck.drop(1) ++ ck.take(1)
+  lazy val getCkNext = ck.takeRight(1) ++ ck.dropRight(1)
   def getUki( i : Int ) : Set[Seq[Int]] = {
     if ( i == -1 )
       return Set[Seq[Int]]()
@@ -238,8 +238,8 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   def isReg() = isB() && numChildren() == 1
   def isMux() = isB() && numChildren() == 2
 
-  def getUkPrev() : Seq[Set[Seq[Int]]] = { uk.map( uki => uki.map( v => { List( v(0) - 1 ) ++ v.drop(1) }.to[Seq] )) }
-  def getUkNext() : Seq[Set[Seq[Int]]] = { uk.map( uki => uki.map( v => { List( v(0) + 1 ) ++ v.drop(1) }.to[Seq] )) }
+  lazy val getUkPrev = uk.map( uki => uki.map( v => { List( v(0) - 1 ) ++ v.drop(1) }.to[Seq] ))
+  lazy val getUkNext = uk.map( uki => uki.map( v => { List( v(0) + 1 ) ++ v.drop(1) }.to[Seq] ))
   def numChildren() : Int = children.size
   def hasChild( n : Node ) : Boolean = { children.contains( n ) }
   def getChildren() : Set[Node] = { children.toSet }
@@ -254,10 +254,10 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
       removeChild( child )
   }
   def isUsefulChild( c : Node ) : Boolean = {
-    c.getCkNext().zip( ck ).find( cks => {
+    c.getCkNext.zip( ck ).find( cks => {
       ( cks._1 != -1 && cks._2 != -1 && (
-        c.getUkNext()(cks._1) == uk( cks._2 ) || // mux cond
-          c.getUkNext()( cks._1 ) == ( c.getUkNext()( cks._1 ) intersect uk( cks._2 ) ) // add cond
+        c.getUkNext(cks._1) == uk( cks._2 ) || // mux cond
+          c.getUkNext( cks._1 ) == ( c.getUkNext( cks._1 ) intersect uk( cks._2 ) ) // add cond
       ))
     }).isDefined
   }
@@ -267,7 +267,7 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
     children += n
     n.addParent( this )
   }
-  def addChildren( nS : Iterable[Node] ) : Unit = {
+  def addChildren( nS : TraversableOnce[Node] ) : Unit = {
     for ( n <- nS )
       addChild( n )
   }
@@ -343,10 +343,10 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   private def getMuxSwitch( childL : Node, childR : Node ) : Vector[Int] = {
     assert( isMux(), "Must be mux to call muxSwitch" )
 
-    val lUk = childL.getUkNext()
-    val lCk = childL.getCkNext()
-    val rUk = childR.getUkNext()
-    val rCk = childR.getCkNext()
+    val lUk = childL.getUkNext
+    val lCk = childL.getCkNext
+    val rUk = childR.getUkNext
+    val rCk = childR.getCkNext
     ck.zip( lCk.zip( rCk ) ).map( cks => {
       // unnecessary to have both but better error checking
       val isL = ( cks._1 != -1 && cks._2._1 != -1 && lUk( cks._2._1 ) == uk( cks._1 ) )
