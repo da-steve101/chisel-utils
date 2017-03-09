@@ -868,6 +868,9 @@ object Transforms {
     if ( nA.getParents().size <= 1 || nA.isC() )
       return List[Node]()
 
+    for ( n <- List( nA ) ++ nA.getParents() ++ nA.getChildren )
+      assert( n.isLocked() )
+
     val shuffledPar = Random.shuffle( nA.getParents() )
     val splitIdx = Random.nextInt( shuffledPar.size - 1 )
 

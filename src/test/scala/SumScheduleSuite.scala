@@ -1543,6 +1543,49 @@ class SumScheduleSuite extends TestSuite {
     // assert( newNodes.contains(n) )
   }
 
+  @Test def mergeTest {
+    // Node Node@959512813(B) { Vector(Set(Vector(6, 4))) } { Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1) } should satisfy constraints after merge of
+    // Node@1506986179(B) {
+    val node = Node( Vector(Set(Vector(2, 7))), Vector(0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0) )
+    node.setB()
+    // and Node@1881595643(B) {
+    val selNode = Node( Vector(Set(Vector(7, 4)), Set(Vector(2, 7))), Vector(-1, -1, -1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, -1, 0, -1, -1, -1, -1) )
+    selNode.setB()
+    // has parents Set(Node@482083279(B) { Vector(Set(Vector(2, 7)), Set(Vector(7, 4))) } { Vector(0, -1, -1, -1, 0, 0, -1, -1, -1, 0, 0, -1, -1, -1, 0, -1, -1, -1, -1, -1, 1, -1, -1, -1, 0) })
+    // node children Set(Node@1860458806(B) {
+    val nodeA = Node( Vector(Set(Vector(1, 7))), Vector(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0) )
+    nodeA.setB()
+    // node parents Vector(Node@1250103303(B) {
+    val nPar1 = Node( Vector(Set(Vector(3, 7))), Vector(0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
+    nPar1.setB()
+    // Node@1729078159(B) {
+    val nPar2 = Node( Vector(Set(Vector(8, 4)), Set(Vector(7, 5)), Set(Vector(3, 7))), Vector(-1, 2, -1, -1, -1, -1, 2, -1, -1, -1, -1, 2, -1, -1, -1, -1, 0, 0, 0, 0, 0, 1, -1, -1, -1) )
+    nPar2.setB()
+    // sel children Set(Node@959512813(B) {
+    val nodeB = Node( Vector(Set(Vector(6, 4))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1) )
+    nodeB.setB()
+    // Node@1860458806(B) { == nodeA Vector(Set(Vector(1, 7))) } { Vector(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 0) })
+    // sel parents Vector(Node@1447738371(B) {
+    val selPar = Node( Vector(Set(Vector(8, 4)), Set(Vector(3, 7))), Vector(-1, -1, -1, -1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, 1, -1, -1, -1, -1, -1, 0, -1, -1, -1) )
+    selPar.setB()
+
+    node.addChild( nodeA )
+    selNode.addChild( nodeA )
+    selNode.addChild( nodeB )
+    nPar1.addChild( node )
+    nPar2.addChild( node )
+    selPar.addChild( selNode )
+
+    assert( Node.satisfiesConstraints( node ) )
+    assert( Node.satisfiesConstraints( selNode ) )
+
+    val nodeList = Transforms.tryMerge( node, selNode )
+
+    assert( nodeList.isDefined )
+    for ( n <- List( nodeList.get ) )
+      assert( Node.satisfiesConstraints( n ), "Node " + n )
+  }
+
   @Test def conv3n5 {
     val imgSize = 5
     val filterSize = 3
