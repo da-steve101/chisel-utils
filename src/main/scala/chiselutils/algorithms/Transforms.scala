@@ -10,7 +10,7 @@ import scala.language.{implicitConversions, higherKinds}
 
 object Transforms {
 
-  val useOnlyAdd2 = true
+  val useOnlyAdd2 = false
   val myRand = java.util.concurrent.ThreadLocalRandom.current() //new Random
 
   /** Combine two uks into 1 and return the index mapping to them
@@ -162,49 +162,6 @@ object Transforms {
     filterCk( child.getCkNext, par.ck ) // for adds just filter -1's
   }
 
-  /** nPar is a reg, other is an add
-    * if add2 can only go to case 6
-    * if add3 randomally go to case 4 or 6
-    */
-  private def swapCase1( nPar : Node ) : Seq[Node] = {
-    assert( nPar.numChildren() == 1, "Node must have one child" )
-    val nAdd23 = nPar.getOnlyChild()
-    val goToCase4 = nAdd23.numChildren() == 3 && randBool
-    val chosenChild = nAdd23.getRandomChild()
-    val regChilds = {
-      if ( goToCase4 )
-        Set( chosenChild._1 )
-      else
-        nAdd23.getChildren
-    }
-    val newNodes = regChilds.map( child => {
-      val ck = filterCk( child, nAdd23 )
-      val newNode = Node( child.getUkNext, ck )
-      newNode.addChild( child )
-      newNode.addChild( child )
-      newNode.setB()
-      newNode
-    })
-    nAdd23.removeChildren()
-    nPar.removeChildren()
-    nPar.addChildren( newNodes )
-    nPar.setA()
-    if ( goToCase4 ) {
-      val addUkCk = chosenChild._2.map( child => {
-        val ck = filterCk( child, nAdd23 )
-        val uk = child.getUkNext
-        ( uk, ck, child )
-      }).toList
-      val ukck = combineAdd( addUkCk(0)._1, addUkCk(0)._2, addUkCk(1)._1, addUkCk(1)._2 )
-      val addNode = Node( ukck._1, ukck._2 )
-      addNode.setA()
-      addNode.addChildren( addUkCk.map( _._3 ) )
-      nPar.addChild( addNode )
-      return List( nPar, addNode ) ++ newNodes.toList
-    }
-    List( nPar ) ++ newNodes.toList
-  }
-
   /** nPar is a reg, input is mux
     * goes to case 10
     */
@@ -223,59 +180,6 @@ object Transforms {
     nPar.addChildren( newNodes )
     nPar.setB()
     List( nPar ) ++ newNodes.toList
-  }
-
-  /** nPar is add, input is add and reg
-    * if add2 then go to 1 or 4
-    * if add3 then go to 5
-    */
-  private def swapCase4( nPar : Node, nReg : Node, nAdd23 : Node ) : Seq[Node] = {
-
-    if ( nAdd23.numChildren() == 2 && randBool() && !useOnlyAdd2 ) {
-      val ukck = combineAdd( nReg.uk, nReg.ck, nAdd23.uk, nAdd23.ck )
-      val nodeA = Node( ukck._1, ukck._2 )
-      for ( c <- nReg.getChildren() ++ nAdd23.getChildren() )
-        nodeA.addChild( c )
-      nodeA.setA()
-      nPar.removeChildren()
-      nPar.addChild( nodeA )
-      nPar.setB()
-      nReg.removeChildren()
-      nAdd23.removeChildren()
-      return List( nPar, nodeA )
-    }
-    // else nAdd23 is 3 input
-    val randChild = nAdd23.getRandomChild()
-    val otherChild = randChild._2.toList
-
-    val randuK = randChild._1.getUkNext
-    val randcK = filterCk( randChild._1, nAdd23 )
-    val combAdd = combineAdd( nReg.uk, nReg.ck, randuK, randcK )
-    val nodeA = Node( combAdd._1, combAdd._2 )
-    nodeA.addChild( randChild._1 )
-    nodeA.addChild( nReg.getOnlyChild() )
-    nodeA.setA()
-
-    val ukck = otherChild.map( child => {
-      val uk = child.getUkNext
-      val ck = filterCk( child, nAdd23 )
-      ( uk, ck )
-    }).reduce( ( x, y ) => combineAdd( x._1, x._2, y._1, y._2 ) )
-
-    val nodeB = Node( ukck._1, ukck._2 )
-    if ( otherChild.size == 1 )
-      nodeB.setB()
-    else
-      nodeB.setA()
-    nodeB.addChildren( otherChild )
-
-    nPar.removeChildren()
-    nPar.addChild( nodeA )
-    nPar.addChild( nodeB )
-    nPar.setA()
-    nReg.removeChildren()
-    nAdd23.removeChildren()
-    List( nPar, nodeA, nodeB )
   }
 
   /** nPar is add, inputs are adds
@@ -304,7 +208,7 @@ object Transforms {
       ( group0Idx until group1Idx ).map( allGc( _ ) ),
       ( group1Idx until allGc.size ).map( allGc( _ ) )
     ).filter( !_.isEmpty )
-    if ( !applyIfIncrease && nPar.numChildren() == 2 && allGcGrouped.size == 3 )
+    if ( !applyIfIncrease && nPar.numChildren() < allGcGrouped.size )
       return List[Node]()
 
     val addNodes = allGcGrouped.map( addGroup => {
@@ -328,43 +232,6 @@ object Transforms {
     else
       nPar.setA()
     List( nPar ) ++ addNodes.toList
-  }
-
-  /** nPar is add, inputs are reg
-    * goes to 1 or 4
-    */
-  private def swapCase6( nPar : Node ) : Seq[Node] = {
-    val goToCase4 = nPar.numChildren() == 3 && randBool()
-    val chosenChild = nPar.getRandomChild()
-    val nodesToSum = {
-      if ( goToCase4 )
-        chosenChild._2.toList
-      else
-        nPar.getChildren()
-    }
-    val newCkUk = nodesToSum.map( child => {
-      val grandchild = child.getOnlyChild()
-      val newcK = filterCk( grandchild, child )
-      ( grandchild.getUkNext, newcK )
-    }).reduce( ( x, y ) => combineAdd( x._1, x._2, y._1, y._2 ) )
-
-    val nodeA = Node( newCkUk._1, newCkUk._2 )
-    nodeA.setA()
-    nodeA.addChildren( nodesToSum.map( _.getOnlyChild() ) )
-
-    for ( c <- nodesToSum )
-      c.removeChildren()
-
-    nPar.removeChildren()
-    nPar.addChild( nodeA )
-    if ( goToCase4 ) {
-      nPar.addChild( chosenChild._1 )
-      nPar.setA()
-      return List( nPar, chosenChild._1, nodeA )
-    } else
-      nPar.setB()
-
-    List( nPar, nodeA )
   }
 
   /** nPar is add, inputs are reg and mux
@@ -417,34 +284,37 @@ object Transforms {
 
 
   /** nPar is add, others are mux
-    * goes to case 11
-    * perhaps 7, 16, 17?
+    * goes to case 7, 11, 16, 17
     */
   private def swapCase8( nPar : Node ) : Seq[Node] = {
     // can only transform if two unique states, so try to find
     val nParChildren = nPar.getChildren().toList
-    val nMuxCk = nPar.getChildren.map( c => c.getChildren().map( gc => ( gc.getUkNext, filterCk( gc, c ), gc, c ) ))
+    val nMuxCk = nPar.getChildren.map( c => c.getChildren().map( gc => {
+      ( gc.getUkNext, filterCk( gc, c ), gc, c )
+    })).toList.sortBy( -_.size ) // make sure mux is first
 
     val correspondingCk = nMuxCk.head.map( nodeInfo => {
       val matchCks = nMuxCk.tail.map( nMuxSearch => {
-        nMuxSearch.find( otherInfo => {
-          nodeInfo._2 == filterCk( nodeInfo._2, otherInfo._2 ) &&
-          otherInfo._2 == filterCk( otherInfo._2, nodeInfo._2 )
-        })
+        if ( nMuxSearch.size == 1 ) // there is just a reg here which is valid for both sides of mux
+          Some( nMuxSearch.head )
+        else { // it is a mux so ck must exactly match
+          nMuxSearch.find( otherInfo => {
+            nodeInfo._2 == filterCk( nodeInfo._2, otherInfo._2 ) &&
+            otherInfo._2 == filterCk( otherInfo._2, nodeInfo._2 )
+          })
+        }
       })
       ( nodeInfo, matchCks )
     })
     val noPairs = correspondingCk.find( m => m._2.find( z => !z.isDefined ).isDefined ).isDefined
 
-    // if has common nodes then can try to go to 7, 16, 17 maybe even 6??
-
-    if ( noPairs )
+    if ( noPairs ) // can't do anything
       return List[Node]()
 
     // should have matched nodes
     val addNodes = correspondingCk.map( nodeMatch => {
       val nMuxParts = List( nodeMatch._1 ) ++ nodeMatch._2.map( _.get )
-      val ukckSet = nMuxParts.map( nMux => ( nMux._1, nMux._2 ) )
+      val ukckSet = nMuxParts.map( nMux => ( nMux._1, filterCk( nMux._2, nodeMatch._1._2 ) ) )
       val ukck = ukckSet.reduce( (x, y) => combineAdd( x._1, x._2, y._1, y._2 ) )
       val n = Node( ukck._1, ukck._2 )
       n.setA()
@@ -460,30 +330,53 @@ object Transforms {
   }
 
   /** nPar is add, inputs are add and mux
-    * goes to 11
-    * perhaps 16, 18?
+    * goes to 11, 16, 18
     */
   private def swapCase9( nPar : Node, nAdd : Node, nMux : Node ) : Seq[Node] = {
-    if ( nAdd.isAdd3() || useOnlyAdd2 )
+    if ( useOnlyAdd2 ) // there is no way to transform 9 using only add2's
       return List[Node]()
-    val ukcks = nMux.getChildren().map( child => {
-      val newCk = filterCk( child, nMux )
-      val addCk = filterCk( nAdd.ck, newCk )
-      val ukck = combineAdd( child.getUkNext, newCk, nAdd.uk, addCk )
-      ( ukck._1, ukck._2, child )
-    })
-    val newNodes = ukcks.map( ukck => {
-      val n = Node( ukck._1, ukck._2 )
-      n.addChildren( nAdd.getChildren() )
-      n.addChild( ukck._3 )
-      n.setA()
-      n
-    })
+    val newNodes = {
+      if ( nAdd.isAdd3() || randBool() ) {
+        // simply partition the add
+        val randChild = nAdd.getRandomChild()
+        val otherChild = randChild._2.toList
+        val n1Ck = filterCk( randChild._1, nAdd )
+        val n1 = Node( randChild._1.getUkNext, n1Ck )
+        n1.addChild( randChild._1 )
+        n1.setB()
+        val n2ukck = otherChild.map( x => ( x.getUkNext, filterCk( x, nAdd ) ) ).reduce( ( x, y ) => {
+          combineAdd( x._1, x._2, y._1, y._2 )
+        })
+        val n2 = Node( n2ukck._1, n2ukck._2 )
+        if ( otherChild.size == 1 )
+          n2.setB()
+        else
+          n2.setA()
+        n2.addChildren( otherChild )
+        nPar.setA()
+        List( n1, n2, nMux )
+      } else {
+        val ukcks = nMux.getChildren().map( child => {
+          val newCk = filterCk( child, nMux )
+          val addCk = filterCk( nAdd.ck, newCk )
+          val ukck = combineAdd( child.getUkNext, newCk, nAdd.uk, addCk )
+          ( ukck._1, ukck._2, child )
+        })
+        val newNodes = ukcks.map( ukck => {
+          val n = Node( ukck._1, ukck._2 )
+          n.addChildren( nAdd.getChildren() )
+          n.addChild( ukck._3 )
+          n.setA()
+          n
+        })
+        nMux.removeChildren()
+        nPar.setB()
+        newNodes
+      }
+    }
     nAdd.removeChildren()
-    nMux.removeChildren()
     nPar.removeChildren()
     nPar.addChildren( newNodes )
-    nPar.setB()
     List( nPar ) ++ newNodes.toList
   }
 
@@ -659,8 +552,7 @@ object Transforms {
   }
 
   /** 3 input add parent, reg, reg, mux childs
-    * go to case 11
-    * perhaps 7, 9?
+    * go to case 9, 11
     */
   private def swapCase16( nPar : Node ) : Seq[Node] = {
     val commonNodes = nPar.getChildren().filter( _.isReg() )
@@ -668,23 +560,34 @@ object Transforms {
     val ukckReg = commonNodes.map( child => {
       ( child.uk, child.ck )
     }).reduce( (x,y) => combineAdd( x._1, x._2, y._1, y._2 ) )
-    val newAdds = muxNode.getChildren().map( child => {
-      val ck = filterCk( child, muxNode )
-      val ckFiltered = filterCk( ukckReg._2, ck )
-      val ukck = combineAdd( child.getUkNext, ck, ukckReg._1, ckFiltered )
-      val addNode = Node( ukck._1, ukck._2 )
-      addNode.addChild( child )
-      for ( n <- commonNodes )
-        addNode.addChild( n.getOnlyChild() )
-      addNode.setA()
-      addNode
-    })
-    muxNode.removeChildren()
+    val newAdds = {
+      if ( randBool() ) {
+        val newAdds = muxNode.getChildren().map( child => {
+          val ck = filterCk( child, muxNode )
+          val ckFiltered = filterCk( ukckReg._2, ck )
+          val ukck = combineAdd( child.getUkNext, ck, ukckReg._1, ckFiltered )
+          val addNode = Node( ukck._1, ukck._2 )
+          addNode.addChild( child )
+          addNode.addChildren( commonNodes.map( _.getOnlyChild() ) )
+          addNode.setA()
+          addNode
+        })
+        muxNode.removeChildren()
+        nPar.setB()
+        newAdds
+      } else {
+        // just combine to an add and leave the mux alone
+        val nAdd = Node( ukckReg._1, ukckReg._2 )
+        nAdd.addChildren( commonNodes.map( _.getOnlyChild() ) )
+        nAdd.setA()
+        nPar.setA()
+        Set( muxNode, nAdd )
+      }
+    }
     for ( c <- commonNodes )
       c.removeChildren()
     nPar.removeChildren()
     nPar.addChildren( newAdds )
-    nPar.setB()
     List( nPar ) ++ newAdds.toList
   }
 
@@ -731,7 +634,6 @@ object Transforms {
 
   /** npar is add, inputs are add, add and mux
     * go to case 18, 19
-    * perhaps 11?
     */
   private def swapCase19( nPar : Node, nAdd1 : Node, nAdd2 : Node, nMux : Node ) : Seq[Node] = {
     assert( nAdd1.numChildren() >= nAdd2.numChildren(), "nAdd1 should have more children" )
@@ -781,78 +683,6 @@ object Transforms {
     List( nPar, nMux, newReg, newAdd2 )
   }
 
-  /** nPar is add, inputs are add, add and reg
-    * go to case 5
-    * perhaps 21?
-    */
-  private def swapCase20( nPar : Node, nAdd1 : Node, nAdd2 : Node, nReg : Node ) : Seq[Node] = {
-    assert( nAdd1.numChildren() >= nAdd2.numChildren(), "nAdd1 should have more children" )
-    if ( nAdd2.numChildren() == 2 ) {
-      // combine the reg into nAdd2
-      val ukck = combineAdd( nAdd2.uk, nAdd2.ck, nReg.uk, nReg.ck )
-      val newAdd2 = Node( ukck._1, ukck._2 )
-      newAdd2.addChildren( nAdd2.getChildren() )
-      newAdd2.addChild( nReg.getOnlyChild() )
-      newAdd2.setA()
-      nReg.removeChildren()
-      nAdd2.removeChildren()
-      nPar.replaceIfChild( nAdd2, newAdd2 )
-      nPar.replaceIfChild( nReg, newAdd2 )
-      return List( nPar, nAdd1, newAdd2 )
-    }
-    // else 3 and 3, take one from each and put with reg
-    val chosenChild1 = nAdd1.getRandomChild()
-    val chosenChild2 = nAdd2.getRandomChild()
-    val cC1_ckFiltered = filterCk( chosenChild1._1.getCkNext, nAdd1.ck )
-    val cC2_ckFiltered = filterCk( chosenChild2._1.getCkNext, nAdd2.ck )
-    val ukckTmp = combineAdd( chosenChild1._1.getUkNext, cC1_ckFiltered,
-      chosenChild2._1.getUkNext, cC2_ckFiltered )
-    val ukck3 = combineAdd( ukckTmp._1, ukckTmp._2, nReg.uk, nReg.ck )
-    val newAdd3 = Node( ukck3._1, ukck3._2 )
-    newAdd3.addChild( chosenChild1._1 )
-    newAdd3.addChild( chosenChild2._1 )
-    newAdd3.addChild( nReg.getOnlyChild() )
-    val otherChild1 = chosenChild1._2.toSet
-    val otherChild2 = chosenChild2._2.toSet
-    val ukck1 = otherChild1.map( x => ( x.getUkNext, filterCk( x.getCkNext, nAdd1.ck ) ) ).reduce( ( x, y ) => {
-      combineAdd( x._1, x._2, y._1, y._2 )
-    })
-    val ukck2 = otherChild2.map( x => ( x.getUkNext, filterCk( x.getCkNext, nAdd2.ck ) ) ).reduce( ( x, y ) => {
-      combineAdd( x._1, x._2, y._1, y._2 )
-    })
-    val newAdd1 = Node( ukck1._1, ukck1._2 )
-    val newAdd2 = Node( ukck2._1, ukck2._2 )
-    newAdd1.addChildren( otherChild1 )
-    newAdd2.addChildren( otherChild2 )
-    newAdd1.setA()
-    newAdd2.setA()
-    newAdd3.setA()
-    nReg.removeChildren()
-    nAdd1.removeChildren()
-    nAdd2.removeChildren()
-    nPar.removeChildren()
-    nPar.addChildren( Set( newAdd1, newAdd2, newAdd3 ) )
-    List( nPar ) ++ List( newAdd1, newAdd2, newAdd3 )
-  }
-
-  /** nPar is add, inputs are reg, reg and add
-    * go to case 5
-    * perhaps 20?
-    */
-  private def swapCase21( nPar : Node ) : Seq[Node] = {
-    val nRegs = nPar.getChildren().filter( _.isReg() )
-    val nAdd = nPar.getChildren().find( _.isAdd() ).get
-    val ukck = nRegs.map( x => ( x.uk, x.ck ) ).reduce( ( x, y ) => combineAdd( x._1, x._2, y._1, y._2 ) )
-    val newAdd = Node( ukck._1, ukck._2 )
-    newAdd.addChildren( nRegs.map( _.getOnlyChild() ) )
-    newAdd.setA()
-    for ( n <- nRegs ) {
-      n.removeChildren()
-      nPar.replaceIfChild( n, newAdd )
-    }
-    List( nPar, nAdd, newAdd )
-  }
-
   /** Look at two nodes and try to swap them
     */
   def trySwap( nPar : Node, applyIfIncrease : Boolean = true ) : (Seq[Node], Int) = {
@@ -863,7 +693,7 @@ object Transforms {
     // work out how nodes are connected ( should be directly )
     if ( nPar.isReg() ) {
       if ( nPar.getOnlyChild().isAdd() )
-        return { if ( applyIfIncrease ) ( swapCase1( nPar ), 1 ) else ( List[Node](), 1 ) }
+        return ( swapCase5( nPar, applyIfIncrease ), 1 )// return { if ( applyIfIncrease ) ( swapCase1( nPar ), 1 ) else ( List[Node](), 1 ) }
       if ( nPar.getOnlyChild().isMux() )
         return { if ( applyIfIncrease ) ( swapCase2( nPar ), 2 ) else ( List[Node](), 2 ) }
       // case 3: two regs so no point as changes nothing
@@ -876,11 +706,11 @@ object Transforms {
 
     if ( nPar.isAdd2() ) {
       if ( nReg.isDefined && nAdd.isDefined )
-        return ( swapCase4( nPar, nReg.get, nAdd.get ), 4 )
+        return ( swapCase5( nPar, applyIfIncrease ), 4 ) //return ( swapCase4( nPar, nReg.get, nAdd.get ), 4 )
       if ( nAdd.isDefined && !nMux.isDefined && !nReg.isDefined) // must be 2 adds
         return ( swapCase5( nPar, applyIfIncrease ), 5 )
       if ( nReg.isDefined && !nMux.isDefined && !nAdd.isDefined ) // must be 2 regs
-        return ( swapCase6( nPar ), 6 )
+        return ( swapCase5( nPar, applyIfIncrease ), 6 ) // ( swapCase6( nPar ), 6 )
       if ( nReg.isDefined && nMux.isDefined )
         return ( swapCase7( nPar, nReg.get, nMux.get ), 7 )
       if ( nMux.isDefined && !nReg.isDefined && !nAdd.isDefined ) // must be 2 mux
@@ -910,9 +740,9 @@ object Transforms {
 
     if ( nPar.isAdd3() ) {
       if ( nAdd.isDefined && !nMux.isDefined && !nReg.isDefined )
-        return ( swapCase5( nPar ), 5 )
+        return ( swapCase5( nPar, applyIfIncrease ), 5 )
       if ( nReg.isDefined && !nMux.isDefined && !nAdd.isDefined )
-        return ( swapCase6( nPar ), 6 )
+        return ( swapCase5( nPar, applyIfIncrease ), 6 )
       if ( nReg.isDefined && nMux.isDefined && nAdd.isDefined )
         return ( swapCase18( nPar, nReg.get, nMux.get, nAdd.get ), 18 )
       if ( nReg.isDefined && nMux.isDefined ) {
@@ -929,8 +759,8 @@ object Transforms {
       }
       if ( nReg.isDefined && nAdd.isDefined ) {
         if ( adds.size == 2 ) // if 2 add then case 20, if 2 reg case 21
-          return ( swapCase20( nPar, adds(0), adds(1), nReg.get ), 20 )
-        return ( swapCase21( nPar ), 21 )
+          return ( swapCase5( nPar, applyIfIncrease ), 20 ) // ( swapCase20( nPar, adds(0), adds(1), nReg.get ), 20 )
+        return ( swapCase5( nPar, applyIfIncrease ), 21 ) // ( swapCase21( nPar ), 21 )
       }
       if ( nMux.isDefined ) // 3 muxes
         return ( swapCase8( nPar ), 23 )
