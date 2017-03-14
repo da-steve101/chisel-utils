@@ -112,6 +112,10 @@ object Node {
     false
   }
 
+  def satisfiesConstraints( nSet : TraversableOnce[Node] ) : Boolean = {
+    !nSet.find( n => !satisfiesConstraints( n ) ).isDefined
+  }
+
   /** Check that there are no extra numbers being put in there
     */
   def isMinimal( n : Node ) : Boolean = {
@@ -311,6 +315,8 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
     */
   def testAddUnion( i : Int ) : Boolean = {
     val childSets = children.toVector.map( child => child.getModSet( i ) )
+    if ( childSets.reduce( _ intersect _ ).size != 0 ) // check that only 1 input provides add
+      return false
     val allSet = incr( childSets.reduce( _ ++ _ ) )
     val thisSet = getCki( i )
     if ( childSets.map( _.size ).reduce( _ + _ ) != thisSet.size || allSet.size != thisSet.size )

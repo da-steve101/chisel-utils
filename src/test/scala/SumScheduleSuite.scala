@@ -278,6 +278,43 @@ class SumScheduleSuite extends TestSuite {
     VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
   }
 
+  @Test def swapTest4C {
+    // Node Node@1506648152(A) { Vector(Set(Vector(6, 5), Vector(1, 8), Vector(2, 7), Vector(11, 2), Vector(12, 1), Vector(7, 4))) } { Vector(0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1) } does not satisfy constraints after swap 4
+    // has parents Set(Node@1829186716(B) {
+    val nPar = Node( Vector(Set(Vector(7, 5), Vector(12, 2), Vector(13, 1), Vector(2, 8), Vector(3, 7), Vector(8, 4))), Vector(-1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
+    nPar.setA()
+    // old children Set(Node@1521339240(B) {
+    val n1 = Node( Vector(Set(Vector(12, 1), Vector(11, 2), Vector(7, 4))), Vector(0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
+    n1.setB()
+    // Node@1208305498(A) {
+    val n2 = Node( Vector(Set(Vector(1, 8), Vector(6, 5), Vector(2, 7))), Vector(0, -1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
+    n2.setA()
+    // grandchildren Set(Set(Node@414091901(B) {
+    val nodeA = Node( Vector(Set(Vector(11, 1), Vector(10, 2), Vector(6, 4))), Vector(-1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0) )
+    nodeA.setB()
+    // Set(Node@212901232(B) {
+    val nodeB = Node( Vector(Set(Vector(1, 7))), Vector(-1, -1, -1, 0, 0, -1, -1, -1, 0, 0, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 0) )
+    nodeB.setB()
+    // Node@551995405(B) {
+    val nodeC = Node( Vector(Set(Vector(5, 5))), Vector(-1, -1, -1, -1, 0, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0) )
+    nodeC.setB()
+    // Node@1516304761(C) {
+    val nodeD = Node( Vector(Set(Vector(0, 8))), Vector(0, 0, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, -1, 0) )
+    nodeD.setC()
+    nPar.addChildren( Set( n1, n2 ) )
+    n1.addChild( nodeA )
+    n2.addChildren( Set( nodeB, nodeC, nodeD ) )
+
+    for ( n <- Set( nPar, n1, n2 ) )
+      assert( Node.satisfiesConstraints( n ) )
+
+    val nodeList = Transforms.trySwap( nPar )._1
+
+    for ( n <- nodeList )
+      assert( Node.satisfiesConstraints( n ), "Node " + n + " does not satisfy constraints" )
+
+  }
+
   @Test def testSwap5 {
     for ( numInputs <- 4 to 9 ) {
       val uksIn = ( 0 until numInputs ).map( i => genTermUk( i ) )
@@ -1598,7 +1635,7 @@ class SumScheduleSuite extends TestSuite {
       cSet.map( v => { Vector( latAdd + v(0) ) ++ v.drop(1) }.to[Seq])
     })
     var nodes = AnnealingSolver.init( Vector( cp ).to[Seq] )._1
-    nodes = AnnealingSolver.runPar( nodes, 100, 1000000, true )
+    nodes = AnnealingSolver.runPar( nodes, 1000, 1000000, true )
     AnnealingSolver.toDot( nodes, "conv3n5.dot" )
     println( "cost = " + nodes.size )
     val outNodes = nodes.filter( _.parentsIsEmpty() ).toVector

@@ -367,7 +367,7 @@ object AnnealingSolver {
       oldTime = currTime
       val mergeCount = new java.util.concurrent.atomic.AtomicInteger()
       val splitCount = new java.util.concurrent.atomic.AtomicInteger()
-      val swapCount = Vector.fill( 21 ) ( new java.util.concurrent.atomic.AtomicInteger() )
+      val swapCount = Vector.fill( 23 ) ( new java.util.concurrent.atomic.AtomicInteger() )
       if ( safeMode ) {
         // do expensive checks
         for ( n <- nodes ) {
@@ -375,7 +375,6 @@ object AnnealingSolver {
             assert( nodes.contains( nc ) )
           assert( !n.isLocked() )
           assert( Node.verifyNode( n ) )
-          assert( !n.isAdd3() )
         }
       }
       println( "Start inner loop" )
@@ -467,18 +466,15 @@ object AnnealingSolver {
             val nodeToSplit = node.getChildren().find( n => n.getParentSet.size > 1 )
             if ( nodeToSplit.isDefined ) {
               if ( applyIfIncrease ) {
-                assert( Node.isMinimal( nodeToSplit.get ) )
                 val oldParents = nodeToSplit.get.getParentSet
                 val oldChildren = nodeToSplit.get.getChildren
                 if ( safeMode ) {
-                  for ( n <- oldParents ++ oldChildren ++ nodeToSplit )
-                    assert( Node.satisfiesConstraints( n ), "Node " + n + " should satisfy constraints " )
+                  assert( Node.isMinimal( nodeToSplit.get ) )
+                  assert( Node.satisfiesConstraints( oldParents ++ oldChildren ++ nodeToSplit ) )
                 }
                 val nodeList = performSplit( nodeToSplit.get )
-                if ( safeMode ) {
-                  for ( n <- oldParents ++ oldChildren )
-                    assert( Node.satisfiesConstraints( n ), "Node " + n + " should satisfy constraints " )
-                }
+                if ( safeMode )
+                  assert( Node.satisfiesConstraints( oldParents ++ oldChildren ) )
                 if ( nodeList.size > 0 ) {
                   assert( nodeToSplit.get.isLocked(), "Should be removing locked nodes" )
                   assert( lockRes._2.contains( nodeToSplit.get ), "Should hold locks" )
@@ -532,7 +528,6 @@ object AnnealingSolver {
                     assert( Node.isMinimal( n ),
                       "node " + n + " should be minimal after swap " + res._2 +
                         " has parents " + n.getParentSet() + " old children " + nodeChildren + " grandchildren " + grandChildren )
-                    assert( !n.isAdd3(), "Node " + n + " is Add3 after " + res._2 )
                   }
                   if ( !node.parentsIsEmpty )
                     assert( Node.isMinimal( node ),
