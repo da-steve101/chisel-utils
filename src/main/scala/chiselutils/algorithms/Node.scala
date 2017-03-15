@@ -308,7 +308,7 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   }
   def getRandomChild() : (Node, Set[Node]) = {
     val idx = Random.nextInt( children.size )
-    val randChild = getChildIter().drop( idx ).next()
+    val randChild = children.iterator.drop( idx ).next()
     ( randChild, children.toSet - randChild )
   }
   def getRandomChildOrder() : Seq[Node] = {
@@ -316,10 +316,7 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   }
   def getOnlyChild() : Node = {
     assert( numChildren() == 1, "Cannot get only child, not 1 child!" )
-    getChildIter().next()
-  }
-  def getChildIter() : Iterator[Node] = {
-    children.iterator
+    children.head
   }
   def replaceIfChild( childOld : Node, childNew : Node ) : Boolean = {
     val search = children.find( _ == childOld )
@@ -421,6 +418,5 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
     if ( _hashIdx == -1 )
       _hashIdx = value
   }
-
 
 }
