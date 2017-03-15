@@ -4,7 +4,6 @@ import org.junit.Ignore
 import scala.util.Random
 import scala.collection.mutable.ArrayBuffer
 import chiselutils.algorithms.Node
-import chiselutils.algorithms.Transforms
 import chiselutils.algorithms.AnnealingSolver
 import com.github.tototoshi.csv._
 import java.io.File
@@ -116,6 +115,27 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraintC( nodeA ) )
   }
 
+  def getSetFromNode( n : Node, childrenOnly : Boolean = false ) : Set[Node] = {
+    if ( childrenOnly || n.numChildren == 0 )
+      return Set( n ) ++ n.getChildren
+    Set( n ) ++ n.getChildren.map( getSetFromNode( _ ) ).reduce( _ ++ _ )
+  }
+
+  def transformSwap( nPar : Node, childrenOnly : Boolean = false ) : Unit = {
+    for ( n <- getSetFromNode( nPar, childrenOnly ) ) {
+      assert( Node.satisfiesConstraints( n ), "Node " + n + " must satisfy constraints" )
+      assert( Node.isMinimal( n ), "Node " + n + " must be minimal" )
+    }
+    val nodeList = AnnealingSolver.performSwap( nPar, true )
+    val nodeSet = getSetFromNode( nPar, childrenOnly )
+    for ( n <- nodeSet ) {
+      assert( Node.satisfiesConstraints( n ), "Node " + n + " must satisfy constraints after swap " + nodeList._2 )
+      assert( Node.isMinimal( n ), "Node " + n + " must be minimal after swap " + nodeList._2 )
+    }
+    if ( !childrenOnly )
+      VerifyHardware( nodeSet, List( nPar ) )
+  }
+
   @Test def testSwap1 {
     val nodeAuK = genTermUk( 0 ) // termination setA
     val nodeBuK = genTermUk( 1 ) // termination setB
@@ -133,19 +153,8 @@ class SumScheduleSuite extends TestSuite {
     val nodePar = Node( nodeSwap.getUkNext, nodeSwap.getCkNext )
     nodePar.setB()
     nodePar.addChild( nodeSwap )
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintA( nodeSwap ) )
-    assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar )._1
-
-    assert( nodeList.size == 3 )
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd2() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isReg() )
-    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isReg() )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
+    transformSwap( nodePar )
   }
 
   @Test def testSwap2 {
@@ -168,19 +177,8 @@ class SumScheduleSuite extends TestSuite {
     nodePar.setB()
     nodePar.addChild( nodeSwap )
     nodePar.addChild( nodeSwap )
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintB( nodeSwap ) )
-    assert( Node.satisfiesConstraintB( nodePar ) )
 
-    val nodeList = Transforms.trySwap( nodePar )._1
-
-    assert( nodeList.size == 3 )
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isReg() )
-    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isReg() )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
+    transformSwap( nodePar )
   }
 
   @Test def testSwap4 {
@@ -212,20 +210,7 @@ class SumScheduleSuite extends TestSuite {
     nodePar.addChild( nodeSwap )
     nodePar.addChild( nodeOther )
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintC( nodeC ) )
-    assert( Node.satisfiesConstraintB( nodeSwap ) )
-    assert( Node.satisfiesConstraintA( nodeOther ) )
-    assert( Node.satisfiesConstraintA( nodePar ) )
-
-    val nodeList = Transforms.trySwap( nodePar )._1
-
-    assert( nodeList.size == 2 )
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isReg() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd3() )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
+    transformSwap( nodePar )
   }
 
   @Test def testSwap4B {
@@ -261,21 +246,7 @@ class SumScheduleSuite extends TestSuite {
     nodePar.addChild( nodeSwap )
     nodePar.addChild( nodeOther )
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintC( nodeC ) )
-    assert( Node.satisfiesConstraintC( nodeD ) )
-    assert( Node.satisfiesConstraintB( nodeSwap ) )
-    assert( Node.satisfiesConstraintA( nodeOther ) )
-    assert( Node.satisfiesConstraintA( nodePar ) )
-
-    val nodeList = Transforms.trySwap( nodePar )._1
-
-    assert( nodeList.size == 3 )
-    for ( n <- nodeList )
-      assert( Node.satisfiesConstraints( n ) )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
+    transformSwap( nodePar )
   }
 
   @Test def swapTest4C {
@@ -305,14 +276,7 @@ class SumScheduleSuite extends TestSuite {
     n1.addChild( nodeA )
     n2.addChildren( Set( nodeB, nodeC, nodeD ) )
 
-    for ( n <- Set( nPar, n1, n2 ) )
-      assert( Node.satisfiesConstraints( n ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    for ( n <- nodeList )
-      assert( Node.satisfiesConstraints( n ), "Node " + n + " does not satisfy constraints" )
-
+    transformSwap( nPar, true )
   }
 
   @Test def testSwap5 {
@@ -356,24 +320,7 @@ class SumScheduleSuite extends TestSuite {
       nodePar.setA()
       nodePar.addChildren( addNodes )
 
-      for ( n <- nodesIn )
-        assert( Node.satisfiesConstraintC( n ) )
-      for ( n <- addNodes )
-        assert( Node.satisfiesConstraintA( n ) )
-      assert( Node.satisfiesConstraintA( nodePar ) )
-
-      val nodeList = Transforms.trySwap( nodePar )._1
-
-      assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isA() )
-      assert( nodeList.tail.map( _.numChildren() ).sum == numInputs )
-      for ( n <- nodeList.tail ) {
-        if ( n.numChildren() > 1 )
-          assert( Node.satisfiesConstraintA( n ) && n.isAdd() )
-        else
-          assert( Node.satisfiesConstraintB( n ) && n.isReg() )
-      }
-
-      VerifyHardware( nodeList.toSet ++ nodesIn.toSet, List( nodeList(0) ) )
+      transformSwap( nodePar )
     }
   }
 
@@ -401,19 +348,7 @@ class SumScheduleSuite extends TestSuite {
     nodePar.addChild( nodeSwap )
     nodePar.addChild( nodeOther )
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintB( nodeSwap ) )
-    assert( Node.satisfiesConstraintB( nodeOther ) )
-    assert( Node.satisfiesConstraintA( nodePar ) )
-
-    val nodeList = Transforms.trySwap( nodePar )._1
-
-    assert( nodeList.size == 2 )
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isReg() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd2() )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
+    transformSwap( nodePar )
   }
 
   @Test def testSwap7 {
@@ -444,22 +379,7 @@ class SumScheduleSuite extends TestSuite {
     nodePar.addChild( nodeSwap )
     nodePar.addChild( nodeOther )
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintC( nodeC ) )
-    assert( Node.satisfiesConstraintB( nodeSwap ) )
-    assert( Node.satisfiesConstraintB( nodeOther ) )
-    assert( Node.satisfiesConstraintA( nodePar ) )
-
-    val nodeList = Transforms.trySwap( nodePar )._1
-
-    assert( nodeList.size == 3 )
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd2() )
-    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd2() )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
-
+    transformSwap( nodePar )
   }
 
   @Test def testSwap9 {
@@ -490,22 +410,7 @@ class SumScheduleSuite extends TestSuite {
     nPar.addChild( nAdd )
     nPar.addChild( nMux )
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintC( nodeC ) )
-    assert( Node.satisfiesConstraintC( nodeD ) )
-    assert( Node.satisfiesConstraintA( nAdd ) )
-    assert( Node.satisfiesConstraintB( nMux ) )
-    assert( Node.satisfiesConstraintA( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 3 )
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd3() )
-    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd3() )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
+    transformSwap( nPar )
   }
 
   @Test def testSwap10 {
@@ -532,19 +437,7 @@ class SumScheduleSuite extends TestSuite {
     nodePar.addChild( nodeSwap )
     nodePar.addChild( nodeOther )
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintB( nodeSwap ) )
-    assert( Node.satisfiesConstraintB( nodeOther ) )
-    assert( Node.satisfiesConstraintB( nodePar ) )
-
-    val nodeList = Transforms.trySwap( nodePar )._1
-
-    assert( nodeList.size == 2 )
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isReg() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isMux() )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
+    transformSwap( nodePar )
   }
 
   @Test def testSwap11 {
@@ -574,21 +467,7 @@ class SumScheduleSuite extends TestSuite {
     nodePar.addChild( nodeSwap )
     nodePar.addChild( nodeOther )
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintC( nodeC ) )
-    assert( Node.satisfiesConstraintA( nodeSwap ) )
-    assert( Node.satisfiesConstraintA( nodeOther ) )
-    assert( Node.satisfiesConstraintB( nodePar ) )
-
-    val nodeList = Transforms.trySwap( nodePar )._1
-
-    assert( nodeList.size == 3 )
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd2() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isReg() )
-    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isMux() )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
+    transformSwap( nodePar )
   }
 
   @Test def testSwap11B {
@@ -618,20 +497,7 @@ class SumScheduleSuite extends TestSuite {
     nAdd1.setA()
     nAdd2.setA()
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintC( nodeC ) )
-    assert( Node.satisfiesConstraintC( nodeD ) )
-    assert( Node.satisfiesConstraintA( nAdd1 ) )
-    assert( Node.satisfiesConstraintA( nAdd2 ) )
-    assert( Node.satisfiesConstraintB( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    for ( n <- nodeList )
-      assert( Node.satisfiesConstraints( n ) )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
+    transformSwap( nPar )
   }
 
   @Test def testSwap11C {
@@ -650,97 +516,7 @@ class SumScheduleSuite extends TestSuite {
     n1.addChildren( Set( nodeA, nodeB ) )
     n2.addChildren( Set( nodeA, nodeB ) )
 
-    assert( Node.satisfiesConstraintA( n1 ) )
-    assert( Node.satisfiesConstraintA( n2 ) )
-    assert( Node.satisfiesConstraintB( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    for ( n <- nodeList ) {
-      assert( Node.satisfiesConstraints( n ), "Node " + n + " must satisfy constraints" )
-      assert( Node.isMinimal( n ), "Node must be minimal" )
-    }
-  }
-
-  @Test def swapTest11D {
-    // Node@1117645218(A) {
-    val nAdd1 = Node( Vector(Set(Vector(11, 0), Vector(9, 2), Vector(10, 1), Vector(5, 4), Vector(4, 5), Vector(6, 3)), Set(Vector(10, 1), Vector(9, 2), Vector(5, 4), Vector(4, 5))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1) )
-    nAdd1.setA()
-    // nAdd2 = Node@223718617(A) {
-    val nAdd2 = Node( Vector(Set(Vector(4, 5), Vector(5, 4), Vector(10, 1), Vector(9, 2)), Set(Vector(11, 0), Vector(9, 2), Vector(10, 1), Vector(5, 4), Vector(4, 5), Vector(6, 3))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1) )
-    nAdd2.setA()
-    // nPar = Node@2135949754(B) {
-    val nPar = Node( Vector(Set(Vector(11, 1), Vector(10, 2), Vector(5, 5), Vector(6, 4)), Set(Vector(10, 2), Vector(5, 5), Vector(7, 3), Vector(11, 1), Vector(12, 0), Vector(6, 4))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1) )
-    nPar.setB()
-    // nAdd1.getChildren() = Set(Node@1683082425(B) {
-    val nA1_0 = Node( Vector(Set(Vector(3, 5)), Set(Vector(3, 5), Vector(4, 4))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
-    nA1_0.setB()
-    // Node@467494393(B) {
-    val nA1_1 = Node( Vector(Set(Vector(4, 4), Vector(10, 0), Vector(9, 1), Vector(8, 2), Vector(5, 3)), Set(Vector(8, 2), Vector(9, 1))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
-    nA1_1.setB()
-    // nAdd2.getChildren() = Set(Node@1285229702(B) {
-    val nA2_0 = Node( Vector(Set(Vector(3, 5)), Set(Vector(4, 4), Vector(9, 1), Vector(8, 2))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
-    nA2_0.setB()
-    // Node@1465079988(B) {
-    val nA2_1 = Node( Vector(Set(Vector(4, 4), Vector(10, 0), Vector(9, 1), Vector(8, 2), Vector(5, 3)), Set(Vector(3, 5))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1) )
-    nA2_1.setB()
-    nAdd1.addChild( nA1_0 )
-    nAdd1.addChild( nA1_1 )
-    nAdd2.addChild( nA2_0 )
-    nAdd2.addChild( nA2_1 )
-    nPar.addChild( nAdd1 )
-    nPar.addChild( nAdd2 )
-
-    for ( n <- Set( nPar, nAdd1, nAdd2 ) ) {
-      assert( Node.satisfiesConstraints( n ) )
-      assert( Node.isMinimal( n ) )
-    }
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    for ( n <- nodeList ) {
-      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
-      assert( Node.isMinimal( n ), "Node must be minimal: " + n )
-    }
-  }
-
-  @Test def swapTest11E {
-    // nAdd1 = Node@1932039124(A) {
-    val nAdd1 = Node( Vector(Set(Vector(8, 4), Vector(7, 5), Vector(3, 7), Vector(2, 8)), Set(Vector(13, 1), Vector(12, 2), Vector(8, 4), Vector(7, 5)), Set(Vector(7, 5), Vector(14, 0), Vector(12, 2), Vector(9, 3), Vector(13, 1), Vector(8, 4)), Set(Vector(14, 0), Vector(13, 1), Vector(9, 3), Vector(8, 4))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 2, 2, 2, 3, 0, -1, -1, -1) )
-    nAdd1.setA()
-    // nAdd2 = Node@1583809588(A) {
-    val nAdd2 = Node( Vector(Set(Vector(13, 1), Vector(12, 2), Vector(8, 4), Vector(7, 5)), Set(Vector(7, 5), Vector(14, 0), Vector(12, 2), Vector(9, 3), Vector(13, 1), Vector(8, 4)), Set(Vector(14, 0), Vector(13, 1), Vector(9, 3), Vector(8, 4)), Set(Vector(9, 3), Vector(8, 4), Vector(4, 6), Vector(3, 7))), Vector(3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 1, 1, 1, 2, -1, -1, -1, -1) )
-    nAdd2.setA()
-    // nPar = Node@1240197764(B) {
-    val nPar = Node( Vector(Set(Vector(9, 4), Vector(8, 5), Vector(4, 7), Vector(3, 8)), Set(Vector(14, 1), Vector(13, 2), Vector(9, 4), Vector(8, 5)), Set(Vector(15, 0), Vector(13, 2), Vector(9, 4), Vector(14, 1), Vector(8, 5), Vector(10, 3)), Set(Vector(15, 0), Vector(14, 1), Vector(10, 3), Vector(9, 4)), Set(Vector(10, 3), Vector(9, 4), Vector(5, 6), Vector(4, 7))), Vector(-1, 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 2, 2, 2, 3, 0, -1, -1) )
-    nPar.setB()
-    // nAdd1.getChildren() = Set(Node@222667687(B) {
-    val nA1_0 = Node( Vector(Set(Vector(1, 8)), Set(Vector(6, 5)), Set(Vector(13, 0), Vector(12, 1), Vector(8, 3))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 2, 0, -1, -1, -1, -1) )
-    nA1_0.setB()
-    // Node@1544331690(B) {
-    val nA1_1 = Node( Vector(Set(Vector(7, 4), Vector(6, 5), Vector(2, 7)), Set(Vector(11, 2), Vector(12, 1), Vector(8, 3), Vector(7, 4), Vector(13, 0)), Set(Vector(7, 4)), Set(Vector(11, 2), Vector(12, 1), Vector(7, 4))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 3, 1, 1, 1, 2, 0, -1, -1, -1, -1) )
-    nA1_1.setB()
-    // nAdd2.getChildren() = Set(Node@1287081551(B) {
-    val nA2_0 = Node( Vector(Set(Vector(2, 7)), Set(Vector(11, 2), Vector(12, 1), Vector(8, 3), Vector(7, 4), Vector(13, 0)), Set(Vector(7, 4)), Set(Vector(11, 2), Vector(12, 1), Vector(7, 4))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 3, 1, 1, 1, 2, -1, -1, -1, -1, 0) )
-    nA2_0.setB()
-    // Node@376851426(B) {
-    val nA2_1 = Node( Vector(Set(Vector(8, 3), Vector(7, 4), Vector(3, 6)), Set(Vector(6, 5)), Set(Vector(13, 0), Vector(12, 1), Vector(8, 3))), Vector(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 2, -1, -1, -1, -1, 0) )
-    nA2_1.setB()
-    nPar.addChildren( Set( nAdd1, nAdd2 ) )
-    nAdd1.addChildren( Set( nA1_0, nA1_1 ) )
-    nAdd2.addChildren( Set( nA2_0, nA2_1 ) )
-
-    for ( n <- Set( nPar, nAdd1, nAdd2 ) ) {
-      assert( Node.satisfiesConstraints( n ) )
-      assert( Node.isMinimal( n ) )
-    }
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    for ( n <- nodeList ) {
-      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
-      assert( Node.isMinimal( n ), "Node must be minimal: " + n )
-    }
+    transformSwap( nPar, true )
   }
 
   @Test def testSwap12 {
@@ -774,22 +550,7 @@ class SumScheduleSuite extends TestSuite {
     nodePar.addChild( nodeSwap )
     nodePar.addChild( nodeOther )
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintC( nodeC ) )
-    assert( Node.satisfiesConstraintC( nodeD ) )
-    assert( Node.satisfiesConstraintB( nodeSwap ) )
-    assert( Node.satisfiesConstraintB( nodeOther ) )
-    assert( Node.satisfiesConstraintB( nodePar ) )
-
-    val nodeList = Transforms.trySwap( nodePar )._1
-
-    assert( nodeList.size == 3 )
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isMux() )
-    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isMux() )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
+    transformSwap( nodePar )
   }
 
   @Test def testSwap12B {
@@ -805,9 +566,12 @@ class SumScheduleSuite extends TestSuite {
     nodeA.setC()
     nodeB.setC()
     nodeC.setC()
-    val nMux1 = Node( nodeA.getUkNext ++ nodeB.getUkNext, node_cK1.map( x => if ( x == 2 ) -1 else x ) )
-    val nMux2 = Node( nodeB.getUkNext ++ nodeC.getUkNext, node_cK1.map( x => if ( x < 1 ) -1 else x - 1 ) )
-    val nPar = Node( nMux1.getUkNext ++ Vector( nMux2.getUkNext(1) ), node_cK2 )
+    val bFlagged = node_cK1.map( x => if ( x == 1 ) Random.nextInt( 2 ) else -1 )
+    val nMux1Ck = node_cK1.zip( bFlagged ).map( x => if ( x._1 == 2 || x._2 == 1 ) -1 else x._1 )
+    val nMux2Ck = node_cK1.zip( bFlagged ).map( x => if ( x._1 < 1 || x._2 == 0 ) -1 else x._1 - 1 )
+    val nMux1 = Node( nodeA.getUkNext ++ nodeB.getUkNext, nMux1Ck )
+    val nMux2 = Node( nodeB.getUkNext ++ nodeC.getUkNext, nMux2Ck )
+    val nPar = Node( nMux1.getUkNext ++ Vector( nMux2.getUkNext.last ), node_cK2 )
     nMux1.addChildren( Set( nodeA, nodeB ) )
     nMux2.addChildren( Set( nodeB, nodeC ) )
     nPar.addChildren( Set( nMux1, nMux2 ) )
@@ -815,20 +579,7 @@ class SumScheduleSuite extends TestSuite {
     nMux2.setB()
     nPar.setB()
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintC( nodeC ) )
-    assert( Node.satisfiesConstraintB( nMux1 ) )
-    assert( Node.satisfiesConstraintB( nMux2 ) )
-    assert( Node.satisfiesConstraintB( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 3 )
-    for ( n <- nodeList )
-      assert( Node.satisfiesConstraints( n ) )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
+    transformSwap( nPar )
   }
 
   @Test def testSwap12C {
@@ -853,19 +604,7 @@ class SumScheduleSuite extends TestSuite {
     nPar.addChild( nMux1 )
     nPar.addChild( nMux2 )
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintB( nMux1 ) )
-    assert( Node.satisfiesConstraintB( nMux2 ) )
-    assert( Node.satisfiesConstraintB( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 3 )
-    for ( n <- nodeList )
-      assert( Node.satisfiesConstraints( n ) )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB ), List( nodeList(0) ) )
+    transformSwap( nPar )
   }
 
   @Test def testSwap13 {
@@ -904,20 +643,7 @@ class SumScheduleSuite extends TestSuite {
     nodePar.addChild( nodeSwap )
     nodePar.addChild( nodeOther )
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintC( nodeC ) )
-    assert( Node.satisfiesConstraintB( nodeSwap ) )
-    assert( Node.satisfiesConstraintB( nodeOther ) )
-    assert( Node.satisfiesConstraintB( nodePar ) )
-
-    val nodeList = Transforms.trySwap( nodePar )._1
-
-    assert( nodeList.size == 3 )
-    for ( n <- nodeList )
-      assert( Node.satisfiesConstraints( n ) )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC ), List( nodeList(0) ) )
+    transformSwap( nodePar )
   }
 
   @Test def testSwap16 {
@@ -951,23 +677,7 @@ class SumScheduleSuite extends TestSuite {
     nPar.addChild( nReg1 )
     nPar.addChild( nReg2 )
 
-    assert( Node.satisfiesConstraintC( nodeA ) )
-    assert( Node.satisfiesConstraintC( nodeB ) )
-    assert( Node.satisfiesConstraintC( nodeC ) )
-    assert( Node.satisfiesConstraintC( nodeD ) )
-    assert( Node.satisfiesConstraintB( nReg1 ) )
-    assert( Node.satisfiesConstraintB( nReg2 ) )
-    assert( Node.satisfiesConstraintB( nMux ) )
-    assert( Node.satisfiesConstraintA( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 3 )
-    assert( Node.satisfiesConstraintB( nodeList(0) ) && nodeList(0).isMux() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd3() )
-    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd3() )
-
-    VerifyHardware( nodeList.toSet ++ Set( nodeA, nodeB, nodeC, nodeD ), List( nodeList(0) ) )
+    transformSwap( nPar )
   }
 
   @Test def testSwap18 {
@@ -999,21 +709,7 @@ class SumScheduleSuite extends TestSuite {
     nPar.addChildren( Set( nMux, nReg, nAdd ) )
     nPar.setA()
 
-    for ( n <- nodesABC ++ nodesDE )
-      assert( Node.satisfiesConstraintC( n ) )
-    assert( Node.satisfiesConstraintB( nReg ) )
-    assert( Node.satisfiesConstraintA( nAdd ) )
-    assert( Node.satisfiesConstraintB( nMux ) )
-    assert( Node.satisfiesConstraintA( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 3 )
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd2() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd3() )
-    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isMux() )
-
-    VerifyHardware( nodeList.toSet ++ nodesABC.toSet ++ nodesDE.toSet, List( nodeList(0) ) )
+    transformSwap( nPar )
   }
 
   @Test def testSwap18B {
@@ -1045,22 +741,7 @@ class SumScheduleSuite extends TestSuite {
     nPar.addChildren( Set( nMux, nReg, nAdd ) )
     nPar.setA()
 
-    for ( n <- nodesABCD ++ nodesEF )
-      assert( Node.satisfiesConstraintC( n ) )
-    assert( Node.satisfiesConstraintB( nReg ) )
-    assert( Node.satisfiesConstraintA( nAdd ) )
-    assert( Node.satisfiesConstraintB( nMux ) )
-    assert( Node.satisfiesConstraintA( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 4 )
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd3() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd2() )
-    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd2() )
-    assert( Node.satisfiesConstraintB( nodeList(3) ) && nodeList(3).isMux() )
-
-    VerifyHardware( nodeList.toSet ++ nodesABCD.toSet ++ nodesEF.toSet, List( nodeList(0) ) )
+    transformSwap( nPar )
   }
 
   @Test def testSwap19 {
@@ -1093,22 +774,7 @@ class SumScheduleSuite extends TestSuite {
     nPar.addChildren( Set( nMux, nAdd1, nAdd2 ) )
     nPar.setA()
 
-    for ( n <- nodesAdds ++ nodesMux )
-      assert( Node.satisfiesConstraintC( n ) )
-    assert( Node.satisfiesConstraintA( nAdd2 ) )
-    assert( Node.satisfiesConstraintA( nAdd1 ) )
-    assert( Node.satisfiesConstraintB( nMux ) )
-    assert( Node.satisfiesConstraintA( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 4 )
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd3() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isMux() )
-    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd3() )
-    assert( Node.satisfiesConstraintA( nodeList(3) ) && nodeList(3).isAdd2() )
-
-    VerifyHardware( nodeList.toSet ++ nodesAdds.toSet ++ nodesMux.toSet, List( nodeList(0) ) )
+    transformSwap( nPar )
   }
 
   @Test def testSwap19B {
@@ -1141,22 +807,7 @@ class SumScheduleSuite extends TestSuite {
     nPar.addChildren( Set( nMux, nAdd1, nAdd2 ) )
     nPar.setA()
 
-    for ( n <- nodesAdds ++ nodesMux )
-      assert( Node.satisfiesConstraintC( n ) )
-    assert( Node.satisfiesConstraintA( nAdd2 ) )
-    assert( Node.satisfiesConstraintA( nAdd1 ) )
-    assert( Node.satisfiesConstraintB( nMux ) )
-    assert( Node.satisfiesConstraintA( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 4 )
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd3() )
-    assert( Node.satisfiesConstraintB( nodeList(1) ) && nodeList(1).isMux() )
-    assert( Node.satisfiesConstraintB( nodeList(2) ) && nodeList(2).isReg() )
-    assert( Node.satisfiesConstraintA( nodeList(3) ) && nodeList(3).isAdd3() )
-
-    VerifyHardware( nodeList.toSet ++ nodesAdds.toSet ++ nodesMux.toSet, List( nodeList(0) ) )
+    transformSwap( nPar )
   }
 
   @Test def testSwap20 {
@@ -1183,21 +834,7 @@ class SumScheduleSuite extends TestSuite {
     nPar.addChildren( Set( nReg, nAdd1, nAdd2 ) )
     nPar.setA()
 
-    for ( n <- nodesIn )
-      assert( Node.satisfiesConstraintC( n ) )
-    assert( Node.satisfiesConstraintA( nAdd2 ) )
-    assert( Node.satisfiesConstraintA( nAdd1 ) )
-    assert( Node.satisfiesConstraintB( nReg ) )
-    assert( Node.satisfiesConstraintA( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 3 )
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd2() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd3() )
-    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd3() )
-
-    VerifyHardware( nodeList.toSet ++ nodesIn.toSet, List( nodeList(0) ) )
+    transformSwap( nPar )
   }
 
   @Test def testSwap20B {
@@ -1224,22 +861,7 @@ class SumScheduleSuite extends TestSuite {
     nPar.addChildren( Set( nReg, nAdd1, nAdd2 ) )
     nPar.setA()
 
-    for ( n <- nodesIn )
-      assert( Node.satisfiesConstraintC( n ) )
-    assert( Node.satisfiesConstraintA( nAdd2 ) )
-    assert( Node.satisfiesConstraintA( nAdd1 ) )
-    assert( Node.satisfiesConstraintB( nReg ) )
-    assert( Node.satisfiesConstraintA( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 4 )
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd3() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd2() )
-    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd2() )
-    assert( Node.satisfiesConstraintA( nodeList(3) ) && nodeList(3).isAdd3() )
-
-    VerifyHardware( nodeList.toSet ++ nodesIn.toSet, List( nodeList(0) ) )
+    transformSwap( nPar )
   }
 
   @Test def testSwap21 {
@@ -1265,21 +887,7 @@ class SumScheduleSuite extends TestSuite {
     nPar.addChildren( Set( nReg, nReg2, nAdd ) )
     nPar.setA()
 
-    for ( n <- nodesIn )
-      assert( Node.satisfiesConstraintC( n ) )
-    assert( Node.satisfiesConstraintB( nReg2 ) )
-    assert( Node.satisfiesConstraintA( nAdd ) )
-    assert( Node.satisfiesConstraintB( nReg ) )
-    assert( Node.satisfiesConstraintA( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 3 )
-    assert( Node.satisfiesConstraintA( nodeList(0) ) && nodeList(0).isAdd2() )
-    assert( Node.satisfiesConstraintA( nodeList(1) ) && nodeList(1).isAdd3() )
-    assert( Node.satisfiesConstraintA( nodeList(2) ) && nodeList(2).isAdd2() )
-
-    VerifyHardware( nodeList.toSet ++ nodesIn.toSet, List( nodeList(0) ) )
+    transformSwap( nPar )
   }
 
   def genTrinary( filterSize : (Int, Int, Int, Int), imgSize : (Int, Int ), throughput : Int = 1 ) : Seq[Seq[Set[Seq[Int]]]] = {
@@ -1344,17 +952,7 @@ class SumScheduleSuite extends TestSuite {
     nOther.addChild( nOtherL )
     nOther.addChild( nOtherR )
 
-    val nodeSeq = Seq( node, nSwap, nOther )
-    for ( n <- nodeSeq )
-      assert( Node.isMinimal( n ), "node " + n + " should be minimal" )
-
-    val res = Transforms.trySwap( node, true )
-
-    // clean up parents of merged nodes
-    nSwap.removeChildren()
-    nOther.removeChildren()
-
-    res._1.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
+    transformSwap( node, true )
   }
 
   @Test def minimalTest2 {
@@ -1383,18 +981,7 @@ class SumScheduleSuite extends TestSuite {
     nSwap.addChild( nSwapL )
     nSwap.addChild( nSwapR )
 
-    val nodeSeq = Seq( node, nSwap, nOther )
-    for ( n <- nodeSeq )
-      assert( Node.isMinimal( n ), "node " + n + " should be minimal" )
-
-    val res = Transforms.trySwap( node, true )
-
-    // clean up parents of merged nodes
-    nSwap.removeChildren()
-    nOther.removeChildren()
-
-    res._1.foreach( n => assert( Node.isMinimal( n ), "node " + n + " should be minimal" ) )
-
+    transformSwap( node, true )
   }
 
   @Test def minimalTest3 {
@@ -1420,17 +1007,7 @@ class SumScheduleSuite extends TestSuite {
     nPar.addChild( nMux )
     nPar.setB()
 
-    assert( Node.satisfiesConstraintB( nReg ) )
-    assert( Node.satisfiesConstraintB( nMux ) )
-    assert( Node.satisfiesConstraintB( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 3 )
-    for ( n <- nodeList )
-      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
-    for ( n <- nodeList )
-      assert( Node.isMinimal( n ), "Node must be minimal: " + n )
+    transformSwap( nPar, true )
   }
 
   @Test def minimalTest4 {
@@ -1452,19 +1029,7 @@ class SumScheduleSuite extends TestSuite {
     nPar.addChild( n1Child )
     nPar.addChild( n2Child )
 
-    assert( Node.satisfiesConstraintB( n1Child ) )
-    assert( Node.satisfiesConstraintB( n2Child ) )
-    assert( Node.satisfiesConstraintB( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 3 )
-    assert( nodeList(0).isMux() )
-    for ( n <- nodeList )
-      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
-    for ( n <- nodeList.drop(1) )
-      assert( Node.isMinimal( n ), "Node must be minimal: " + n )
-
+    transformSwap( nPar, true )
   }
 
   @Test def minimalTest5 {
@@ -1485,18 +1050,7 @@ class SumScheduleSuite extends TestSuite {
     n2.addChildren( Set( nodeB, nodeC ) )
     n1.addChild( nodeA )
 
-    assert( Node.satisfiesConstraintB( n1 ) )
-    assert( Node.satisfiesConstraintB( n2 ) )
-    assert( Node.satisfiesConstraintB( nPar ) )
-
-    val nodeList = Transforms.trySwap( nPar )._1
-
-    assert( nodeList.size == 3 )
-    assert( nodeList(0).isMux() )
-    for ( n <- nodeList )
-      assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
-    for ( n <- nodeList.drop(1) )
-      assert( Node.isMinimal( n ), "Node must be minimal: " + n )
+    transformSwap( nPar, true )
   }
 
   @Test def hardwareGen {
@@ -1575,9 +1129,6 @@ class SumScheduleSuite extends TestSuite {
         nn.uk == n.uk && nn.ck == n.ck && n.letter() == nn.letter()
       ).isDefined )
     }
-    // cant do this as hashcodes change ...
-    //for ( n <- initNodes )
-    // assert( newNodes.contains(n) )
   }
 
   @Test def mergeTest {
@@ -1616,11 +1167,10 @@ class SumScheduleSuite extends TestSuite {
     assert( Node.satisfiesConstraints( node ) )
     assert( Node.satisfiesConstraints( selNode ) )
 
-    val nodeList = Transforms.tryMerge( node, selNode )
+    val nodeList = AnnealingSolver.performMerge( node, selNode )
 
     assert( nodeList.isDefined )
-    for ( n <- List( nodeList.get ) )
-      assert( Node.satisfiesConstraints( n ), "Node " + n )
+    assert( Node.satisfiesConstraints( nodeList.get ), "Node " + nodeList.get )
   }
 
   @Test def conv3n5 {

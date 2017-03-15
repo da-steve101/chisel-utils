@@ -55,6 +55,41 @@ object Node {
     Node( uk.map( s => s.map( v => v.to[Seq] ) ), ck.to[Seq] )
   }
 
+  /** Returns if cki = ( incr( c_(l,i-1%n) U c_(r,i-1%n) )
+    */
+  def testAddUnion( n : Node, i : Int ) : Boolean = {
+    val childSets = n.getChildren.toVector.map( child => child.getModSet( i ) )
+    if ( childSets.reduce( _ intersect _ ).size != 0 ) // check that only 1 input provides add
+      return false
+    // get the next uks to match with this node
+    val allSet = childSets.reduce( _ ++ _ ).map( p => Vector( p.head + 1 ) ++ p.tail )
+    val thisSet = n.getCki( i )
+    if ( childSets.map( _.size ).reduce( _ + _ ) != thisSet.size || allSet.size != thisSet.size )
+      return false
+    allSet == thisSet
+  }
+
+  /** Returns if cki = incr( c_(l,i-1%n) ) or incr( c_(r,i-1%n) )
+    */
+  def testMux( n : Node, i : Int ) : Boolean = {
+    val childSets = n.getChildren.toVector.map( child => {
+      child.getModSet( i ).map( p => Vector( p.head + 1 ) ++ p.tail )
+    })
+    childSets.find( _ == n.getCki( i ) ).isDefined
+  }
+
+  /** Returns if the union of all cki is size 1 and that set has a size of 1
+    * And if the element in that set has it's first element as 0
+    */
+  def testTermination( n : Node ) : Boolean = {
+    if ( n.numChildren() != 0 )
+      return false
+    if ( n.uk.size != 1 || n.uk.head.size != 1)
+      return false
+    n.uk.head.find( p => p.head == 0 ).isDefined
+  }
+
+
   /** Check if a node satisfies constraint A
     */
   def satisfiesConstraintA( n : Node ) : Boolean = {
@@ -68,7 +103,7 @@ object Node {
     // look for violation of constraint using find
     val violation = n.ck.zipWithIndex.find( cki => {
       n.getUki(cki._1).size != 0 && (
-        n.getChildren().find( _.getModIdx( cki._2 ) == -1 ).isDefined || !n.testAddUnion( cki._2 )
+        n.getChildren().find( _.getModIdx( cki._2 ) == -1 ).isDefined || !testAddUnion( n, cki._2 )
       )
     })
     !violation.isDefined
@@ -85,7 +120,7 @@ object Node {
 
     // look for violation using find
     val violation = n.ck.zipWithIndex.find( cki => {
-      n.getUki(cki._1).size != 0 && !n.testMux( cki._2 )
+      n.getUki(cki._1).size != 0 && !testMux( n, cki._2 )
     })
     !violation.isDefined
   }
@@ -99,7 +134,7 @@ object Node {
     if ( n.numChildren() != 0 )
       return false
 
-    n.testTermination( )
+    testTermination( n )
   }
 
   def satisfiesConstraints( n : Node ) : Boolean = {
@@ -196,10 +231,6 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
       return Set[Seq[Int]]()
     uk( idx )
   }
-
-  private def getP0( p : Seq[Int] ) = p.head
-  private def incr( p : Seq[Int] ) : Seq[Int] = Vector( p.head + 1 ) ++ p.drop(1)
-  private def incr( q : Set[Seq[Int]] )  : Set[Seq[Int]] = q.map( incr(_) )
 
   def isLocked() = !available.get()
   def unlockNode() = {
@@ -311,41 +342,6 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   }
   def hasParent( n : Node ) : Boolean = { parents.contains( n ) }
 
-  /** Returns if cki = ( incr( c_(l,i-1%n) U c_(r,i-1%n) )
-    */
-  def testAddUnion( i : Int ) : Boolean = {
-    val childSets = children.toVector.map( child => child.getModSet( i ) )
-    if ( childSets.reduce( _ intersect _ ).size != 0 ) // check that only 1 input provides add
-      return false
-    val allSet = incr( childSets.reduce( _ ++ _ ) )
-    val thisSet = getCki( i )
-    if ( childSets.map( _.size ).reduce( _ + _ ) != thisSet.size || allSet.size != thisSet.size )
-      return false
-    allSet == thisSet
-  }
-
-  /** Returns if cki = incr( c_(l,i-1%n) ) or incr( c_(r,i-1%n) )
-    */
-  def testMux( i : Int ) : Boolean = {
-    if ( numChildren() != 1 && numChildren() != 2 )
-      return false
-    val childSets = children.toVector.map( child => {
-      incr( child.getModSet( i ) )
-    })
-    childSets.find( _ == getCki( i ) ).isDefined
-  }
-
-  /** Returns if the union of all cki is size 1 and that set has a size of 1
-    * And if the element in that set has it's first element as 0
-    */ 
-  def testTermination() : Boolean = {
-    if ( numChildren() != 0 )
-      return false
-    if ( uk.size != 1 || uk.head.size != 1)
-      return false
-    uk.head.find( p => getP0( p ) == 0 ).isDefined
-  }
-
   private def getMuxSwitch( childL : Node, childR : Node ) : Vector[Int] = {
     assert( isMux(), "Must be mux to call muxSwitch" )
 
@@ -357,6 +353,7 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
       // unnecessary to have both but better error checking
       val isL = ( cks._1 != -1 && cks._2._1 != -1 && lUk( cks._2._1 ) == uk( cks._1 ) )
       val isR = ( cks._1 != -1 && cks._2._2 != -1 && rUk( cks._2._2 ) == uk( cks._1 ) )
+      assert( !( isL && isR ), "Mux should never be provided by both sides" )
       val res = {
         if ( isL == isR )
           0

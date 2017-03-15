@@ -109,7 +109,7 @@ object VerifyHardware {
       assert( Node.satisfiesConstraints(n), "Nodes must satisfy constraints" )
     for ( n <- nodes )
       assert( Node.isMinimal( n ), "Node must be minimal: " + n )
-    chiselMainTest( Array("--genHarness", "--compile", "--test", "--vcd", "--backend", "c"),
+    chiselMainTest( Array("--genHarness", "--compile", "--test", "--backend", "c"),
       () => Module( new MyMod( nodes, outNodes ) ) ) { c => new MyModTests( c ) }
   }
 

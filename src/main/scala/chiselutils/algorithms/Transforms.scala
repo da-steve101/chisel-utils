@@ -11,7 +11,8 @@ import scala.language.{implicitConversions, higherKinds}
 object Transforms {
 
   val useOnlyAdd2 = false
-  val myRand = java.util.concurrent.ThreadLocalRandom.current() //new Random
+  val myRandT = java.util.concurrent.ThreadLocalRandom.current() //new Random
+  val myRand = new Random
 
   /** Combine two uks into 1 and return the index mapping to them
     */
@@ -86,7 +87,7 @@ object Transforms {
   }
 
   private def randInt( n : Int ) : Int = {
-    myRand.nextInt( 0,  n )
+    myRandT.nextInt( 0,  n )
   }
 
   private def randShuffle[T, CC[X] <: TraversableOnce[X]]( l : CC[T] )(implicit bf: CanBuildFrom[CC[T], T, CC[T]]) : CC[T] = {
@@ -102,7 +103,7 @@ object Transforms {
     }
     ar.to[CC]
      */
-    Random.shuffle( l )
+    myRand.shuffle( l )
   }
 
   /** Combine two uk/cks in an add
