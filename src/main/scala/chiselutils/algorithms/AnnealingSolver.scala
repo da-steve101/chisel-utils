@@ -542,6 +542,8 @@ object AnnealingSolver {
           lockRes._2.map( n => n.unlockNode() )
         }
       })
+      val totalCnt = mergeCount.get() + splitCount.get + swapCount.map( _.get() ).sum
+      println( "yeild rate = " + totalCnt + "/" + innerLoopSize )
       println( "mergeCount = " + mergeCount.get() )
       println( "splitCount = " + splitCount.get() )
       for ( i <- 0 until swapCount.size )
