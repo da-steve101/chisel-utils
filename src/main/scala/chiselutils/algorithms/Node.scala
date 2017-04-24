@@ -138,12 +138,16 @@ object Node {
   }
 
   def satisfiesConstraints( n : Node ) : Boolean = {
+    if ( n.isC() )
+      return satisfiesConstraintC( n )
+    for ( uki <- n.uk.reduce( _ ++ _ ).map( v => v(0) ) ) {
+      if ( uki < 1 )
+        return false
+    }
     if ( n.isA() )
       return satisfiesConstraintA( n )
     if ( n.isB() )
       return satisfiesConstraintB( n )
-    if ( n.isC() )
-      return satisfiesConstraintC( n )
     false
   }
 

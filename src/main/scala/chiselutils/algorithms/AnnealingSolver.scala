@@ -81,30 +81,28 @@ object AnnealingSolver {
 
   /** look at binary reduction to implement
     */
-  private def cycRemaining( dueTime : Seq[Int] ) : Int = {
+  private def cycRemaining( dueTime : Seq[Int], addSize : Int ) : Int = {
     var cycs = dueTime.sorted
     while ( cycs.size > 1 ) {
-      val m1 = cycs( cycs.size - 1 )
-      val m2 = cycs( cycs.size - 2 )
-      val mNew = math.min( m1, m2 ) - 1
-      cycs = ( cycs.dropRight(2) ++ List(mNew) ).sorted
+      val ms = cycs.takeRight( addSize )
+      val mNew = ms.reduce( math.min( _, _ ) ) - 1
+      cycs = ( cycs.dropRight( addSize ) ++ List(mNew) ).sorted
     }
     cycs.head
   }
 
   /** Return a set of all nodes created and a list of all nodes that are termination points
     */
-  private def addPartition( n : Node ) : ( Set[Node], Seq[Node] ) = {
+  private def addPartition( n : Node, addSize : Int = 2 ) : ( Set[Node], Seq[Node] ) = {
     assert( n.uk.size == 1, "Can only add partition on a single set" )
 
     var addSet = n.uk.head
 
-    val regDelay = cycRemaining( addSet.toVector.map( v => v(0) ) )
+    val regDelay = cycRemaining( addSet.toVector.map( v => v(0) ), addSize )
     val allNodes = collection.mutable.Set( n )
     var currNode = n
     for ( i <- 0 until regDelay ) {
       val newNode = Node( currNode.getUkPrev, currNode.getCkPrev )
-      currNode.addChild( newNode )
       currNode.addChild( newNode )
       currNode.setB()
       allNodes += newNode
@@ -112,10 +110,9 @@ object AnnealingSolver {
     }
 
     addSet = currNode.uk.head
-
     if ( addSet.size == 1 ){
       currNode.setC()
-      assert( Node.satisfiesConstraints(currNode), "currNode should satisfy constraints" )
+      assert( Node.satisfiesConstraints(currNode), "currNode should satisfy constraints: " + currNode + ", " + addSet + ", " + regDelay )
       return ( Set[Node]() ++ allNodes, List( currNode ) )
     }
 
@@ -124,45 +121,43 @@ object AnnealingSolver {
     val arriveTime = elementList.map( v => v(0) )
     val idxList = ( 0 until elementList.size ).map( Set( _ ) )
     var addOrder = arriveTime.zip( idxList ).sortBy( _._1 )
-    addOpOrdering += addOrder( addOrder.size - 1 )._2
-    addOpOrdering += addOrder( addOrder.size - 2 )._2
+    for ( ao <- addOrder.takeRight( addSize ) )
+      addOpOrdering += ao._2
     while( addOrder.size > 1 ) {
-      val m1 = addOrder( addOrder.size - 1 )
-      val m2 = addOrder( addOrder.size - 2 )
-      val mNew = ( math.min( m1._1, m2._1 ) - 1, m1._2 ++ m2._2 )
+      val ms = addOrder.takeRight( addSize )
+      val mNew = ( ms.map( _._1 ).reduce( math.min( _, _ ) ) - 1, ms.map( _._2 ).reduce( _ ++ _ ) )
       addOpOrdering += mNew._2
-      addOrder = ( addOrder.dropRight(2) ++ Vector( mNew ) ).sortBy( _._1 )
+      addOrder = ( addOrder.dropRight( addSize ) ++ Vector( mNew ) ).sortBy( _._1 )
     }
-
-    val combOp = addOpOrdering.dropRight( 1 ).last.toSet
-    val newLuK = Node.ukPrev( Vector( elementList.zipWithIndex.filter( e => combOp.contains( e._2 ) ).map( _._1 ).toSet ) )
-    val newLcK = currNode.getCkPrev // same as is an add
-    val newLNode = Node( newLuK, newLcK )
-    val newRuK = Node.ukPrev( Vector( elementList.zipWithIndex.filterNot( e => combOp.contains( e._2 ) ).map( _._1 ).toSet ) )
-    val newRcK = currNode.getCkPrev // same as is an add
-    val newRNode = Node( newRuK, newRcK )
-    currNode.addChild( newLNode )
-    currNode.addChild( newRNode )
+    // take 2 sets and find the diff ... the diff are the adds
+    val lastN = addOpOrdering.last
+    val lastN1 = addOpOrdering.dropRight(1).last
+    val setDiff : Set[Int] = lastN.diff( lastN1 )
+    val filtDiffs : Set[Set[Int]] = setDiff.map( Set( _ ) ) ++ Set( ( 0 until elementList.size ).toSet.diff( setDiff ) )
+    val newNodes = filtDiffs.map( combOp => {
+      val newUK = Node.ukPrev( Vector( elementList.zipWithIndex.filter( e => combOp.contains( e._2 ) ).map( _._1 ).toSet ) )
+      val newCK = currNode.getCkPrev // same as is an add
+      Node( newUK, newCK )
+    })
+    currNode.addChildren( newNodes )
     currNode.setA()
-    assert( Node.satisfiesConstraints(currNode), "currNode should satisfy constraints" )
-    val lSide = addPartition( newLNode )
-    val rSide = addPartition( newRNode )
-    ( lSide._1 ++ rSide._1 ++ allNodes, lSide._2 ++ rSide._2 )
+    assert( Node.satisfiesConstraints( currNode ), "currNode should satisfy constraints: " + currNode + ", " + newNodes + ", " + addOpOrdering + ", " + elementList + ", " + setDiff + ", " + filtDiffs + ", " + regDelay )
+    val newPart = newNodes.map( n => addPartition( n, addSize ) )
+    ( newPart.map( _._1 ).reduce( _ ++ _ ) ++ allNodes, newPart.map( _._2 ).reduce( _ ++ _ ) )
   }
 
   /** Return all nodes created and a list of uncomplete nodes
     */
-  private def muxPartition( n : Node ) : ( Set[Node], Seq[Node] ) = {
+  private def muxPartition( n : Node, addSize : Int ) : ( Set[Node], Seq[Node] ) = {
     if ( n.uk.size == 1 )
       return ( Set( n ), List( n ) )
 
-    val ukTime = n.uk.map( s => cycRemaining( s.toVector.map( v => v(0) ) ))
-    val regDelays = cycRemaining( ukTime )
+    val ukTime = n.uk.map( s => cycRemaining( s.toVector.map( v => v(0) ), addSize ))
+    val regDelays = cycRemaining( ukTime, 2 )
     val allNodes = collection.mutable.Set( n )
     var currNode = n
     for ( i <- 0 until regDelays ) {
       val newNode = Node( currNode.getUkPrev, currNode.getCkPrev )
-      currNode.addChild( newNode )
       currNode.addChild( newNode )
       currNode.setB()
       allNodes += newNode
@@ -180,7 +175,7 @@ object AnnealingSolver {
     }
 
     val muxOpOrdering = ArrayBuffer[Set[Int]]()
-    val currNodeTime = currNode.uk.map( s => cycRemaining( s.toVector.map( v => v(0) ) ))
+    val currNodeTime = currNode.uk.map( s => cycRemaining( s.toVector.map( v => v(0) ), addSize ))
     val idxList = ( 0 until currNodeTime.size ).map( Set( _ ) )
     var muxOrder = currNodeTime.zip( idxList ).sortBy( _._1 )
     muxOpOrdering += muxOrder( muxOrder.size - 1 )._2
@@ -205,19 +200,19 @@ object AnnealingSolver {
     currNode.addChild( newRNode )
     currNode.setB()
     assert( Node.satisfiesConstraints(currNode), "currNode should satisfy constraints" )
-    val lSide = muxPartition( newLNode )
-    val rSide = muxPartition( newRNode )
+    val lSide = muxPartition( newLNode, addSize )
+    val rSide = muxPartition( newRNode, addSize )
     ( lSide._1 ++ rSide._1 ++ allNodes, lSide._2 ++ rSide._2 )
   }
 
-  def needLatency( cp : Seq[Seq[Set[Seq[Int]]]] ) : Int = {
+  def needLatency( cp : Seq[Seq[Set[Seq[Int]]]], addSize : Int = 2 ) : Int = {
     val cpRemaining = cp.filter( cList => {
       cList.find( !_.isEmpty ).isDefined
     }).map( cList => {
       val listRes = cList.filterNot( _.isEmpty ).map( cSet => {
-        cycRemaining( cSet.toVector.map( v => v(0) ) )
+        cycRemaining( cSet.toVector.map( v => v(0) ), addSize )
       })
-      cycRemaining( listRes )
+      cycRemaining( listRes, addSize )
     })
     -cpRemaining.min // TODO: fix error when cpRemaining is empty
   }
@@ -226,19 +221,19 @@ object AnnealingSolver {
     * Does the very naive thing of all mux then adder tree
     * Returns ( All the nodes, the parent nodes, the termination nodes )
     */
-  def init( cp : Seq[Seq[Set[Seq[Int]]]] ) : ( Set[Node], Seq[Node], Seq[Node] ) = {
+  def init( cp : Seq[Seq[Set[Seq[Int]]]], addSize : Int = 2 ) : ( Set[Node], Seq[Node], Seq[Node] ) = {
     val addTimes = cp.filter( cList => {
       cList.find( !_.isEmpty ).isDefined
     }).map( node => {
       node.filterNot( _.isEmpty ).map( s =>
-        cycRemaining( s.toVector.map( v => v(0) ))
+        cycRemaining( s.toVector.map( v => v(0) ), addSize )
       )
     })
-    val muxTimes = addTimes.map( cycRemaining( _ ) )
+    val muxTimes = addTimes.map( cycRemaining( _, addSize ) )
     val parentNodes = cp.map( Node( _ ) )
-    val muxRes = parentNodes.map( p => muxPartition( p ) )
+    val muxRes = parentNodes.map( p => muxPartition( p, addSize ) )
     val addRes = muxRes.map( n => {
-      val ap = n._2.map( t => addPartition( t ) ).reduce( (x,y) => ( x._1 ++ y._1, x._2 ++ y._2 ) )
+      val ap = n._2.map( t => addPartition( t, addSize ) ).reduce( (x,y) => ( x._1 ++ y._1, x._2 ++ y._2 ) )
       ( ap._1 ++ n._1, ap._2 )
     }).reduce( (x,y) => ( x._1 ++ y._1, x._2 ++ y._2 ) )
     println( "merge nodes for smaller initial graph" )
