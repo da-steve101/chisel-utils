@@ -116,32 +116,25 @@ object AnnealingSolver {
       return ( Set[Node]() ++ allNodes, List( currNode ) )
     }
 
-    val addOpOrdering = ArrayBuffer[Set[Int]]()
     val elementList = addSet.toVector
     val arriveTime = elementList.map( v => v(0) )
     val idxList = ( 0 until elementList.size ).map( Set( _ ) )
     var addOrder = arriveTime.zip( idxList ).sortBy( _._1 )
-    for ( ao <- addOrder.takeRight( addSize ) )
-      addOpOrdering += ao._2
+    var addOp = addOrder.takeRight( addSize ).map( x => x._2 ).toSet
     while( addOrder.size > 1 ) {
       val ms = addOrder.takeRight( addSize )
       val mNew = ( ms.map( _._1 ).reduce( math.min( _, _ ) ) - 1, ms.map( _._2 ).reduce( _ ++ _ ) )
-      addOpOrdering += mNew._2
+      addOp = ms.map( _._2 ).toSet
       addOrder = ( addOrder.dropRight( addSize ) ++ Vector( mNew ) ).sortBy( _._1 )
     }
-    // take 2 sets and find the diff ... the diff are the adds
-    val lastN = addOpOrdering.last
-    val lastN1 = addOpOrdering.dropRight(1).last
-    val setDiff : Set[Int] = lastN.diff( lastN1 )
-    val filtDiffs : Set[Set[Int]] = setDiff.map( Set( _ ) ) ++ Set( ( 0 until elementList.size ).toSet.diff( setDiff ) )
-    val newNodes = filtDiffs.map( combOp => {
+    val newNodes = addOp.map( combOp => {
       val newUK = Node.ukPrev( Vector( elementList.zipWithIndex.filter( e => combOp.contains( e._2 ) ).map( _._1 ).toSet ) )
       val newCK = currNode.getCkPrev // same as is an add
       Node( newUK, newCK )
     })
     currNode.addChildren( newNodes )
     currNode.setA()
-    assert( Node.satisfiesConstraints( currNode ), "currNode should satisfy constraints: " + currNode + ", " + newNodes + ", " + addOpOrdering + ", " + elementList + ", " + setDiff + ", " + filtDiffs + ", " + regDelay )
+    assert( Node.satisfiesConstraints( currNode ), "currNode should satisfy constraints: " + currNode + ", " + newNodes + ", " + addOpOrdering + ", " + elementList + ", " + lastN + ", " + regDelay )
     val newPart = newNodes.map( n => addPartition( n, addSize ) )
     ( newPart.map( _._1 ).reduce( _ ++ _ ) ++ allNodes, newPart.map( _._2 ).reduce( _ ++ _ ) )
   }
