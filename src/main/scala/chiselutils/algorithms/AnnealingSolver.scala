@@ -134,7 +134,7 @@ object AnnealingSolver {
     })
     currNode.addChildren( newNodes )
     currNode.setA()
-    assert( Node.satisfiesConstraints( currNode ), "currNode should satisfy constraints: " + currNode + ", " + newNodes + ", " + addOpOrdering + ", " + elementList + ", " + lastN + ", " + regDelay )
+    assert( Node.satisfiesConstraints( currNode ), "currNode should satisfy constraints: " + currNode + ", " + newNodes + ", " + addOp + ", " + elementList + ", " + regDelay )
     val newPart = newNodes.map( n => addPartition( n, addSize ) )
     ( newPart.map( _._1 ).reduce( _ ++ _ ) ++ allNodes, newPart.map( _._2 ).reduce( _ ++ _ ) )
   }
