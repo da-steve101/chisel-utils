@@ -804,15 +804,17 @@ object Transforms {
           }
         })
       }).toVector
+      assert( nCk.filter( _ != -1 ).size > 0, "Trying to create empty node from " + nA +
+        ", shuffledPar = " + shuffledPar + ", splitIdx = " + splitIdx )
       val n = Node( nA.uk, nCk )
       if ( nA.isA() )
         n.setA()
       if ( nA.isB() )
         n.setB()
       // if nA is mux then check so not adding useless children
-      if ( nA.isMux() ) {
+      if ( nA.isB() ) {
         n.addChildren( nA.getChildren().filter( c => n.isUsefulChild(c) ) )
-        assert( n.numChildren() > 0, "Must have atleast 1 useful child" )
+        assert( n.numChildren() > 0, "Must have atleast 1 useful child for " + n + " from " + nA )
       } else
         n.addChildren( nA.getChildren() )
       for ( p <- parSplit )
