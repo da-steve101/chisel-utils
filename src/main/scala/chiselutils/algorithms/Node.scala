@@ -248,8 +248,16 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   def isA() = nodeType == 0
   def isB() = nodeType == 1
   def isC() = nodeType == 2
-  def setA() = { nodeType = 0 }
-  def setB() = { nodeType = 1 }
+  def setA() = {
+    nodeType = 0
+    for ( c <- getChildren() )
+      assert( isUsefulChild( c ), "Fatal: useless child was added" )
+  }
+  def setB() = {
+    nodeType = 1
+    for ( c <- getChildren() )
+      assert( isUsefulChild( c ), "Fatal: useless child was added" )
+  }
   def setC() = { nodeType = 2 }
   def letter() = {
     if ( nodeType == 0 )
@@ -295,8 +303,8 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   def isUsefulChild( c : Node ) : Boolean = {
     c.getCkNext.zip( ck ).find( cks => {
       ( cks._1 != -1 && cks._2 != -1 && (
-        c.getUkNext(cks._1) == uk( cks._2 ) || // mux cond
-          c.getUkNext( cks._1 ) == ( c.getUkNext( cks._1 ) intersect uk( cks._2 ) ) // add cond
+        ( c.getUkNext(cks._1) == uk( cks._2 ) && ( isB() || nodeType == -1 ) ) || // mux cond
+          ( c.getUkNext( cks._1 ) == ( c.getUkNext( cks._1 ) intersect uk( cks._2 ) ) && ( isA() || nodeType == -1 ) ) // add cond
       ))
     }).isDefined
   }
