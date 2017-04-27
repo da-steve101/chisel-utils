@@ -302,7 +302,7 @@ class Node( val uk : Seq[Set[Seq[Int]]], val ck : Seq[Int] ) {
   }
   def addChild( n : Node ) : Unit = {
     assert( isLocked(), "Node should be locked to addChild" )
-    assert( isUsefulChild(n), "Cannot add a useless child: " + this + ", child: " + n )
+    assert( isUsefulChild(n), "Cannot add a useless child: " + this + ", child: " + n + ", child parents: " + n.getParents() )
     children += n
     n.addParent( this )
   }
